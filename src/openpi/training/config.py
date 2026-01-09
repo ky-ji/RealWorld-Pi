@@ -463,6 +463,38 @@ class LeRobotDROIDDataConfig(DataConfigFactory):
 
 
 @dataclasses.dataclass(frozen=True)
+class LeRobotAssemblyBunDataConfig(DataConfigFactory):
+    """
+    Data config for assembly_bun dataset in LeRobot format.
+    """
+
+    @override
+    def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
+        # The repack transform is *only* applied to the data coming from the dataset,
+        # and *not* during inference. We can use it to make inputs from the dataset look
+        # as close as possible to those coming from the inference environment (e.g. match the keys).
+        # No repack transform needed since our data is already in the expected format
+        repack_transform = _transforms.Group(inputs=[])
+
+        # The data transforms are applied to the data coming from the dataset *and* during inference.
+        data_transforms = _transforms.Group(
+            inputs=[libero_policy.LiberoInputs(model_type=model_config.model_type)],
+            outputs=[libero_policy.LiberoOutputs()],
+        )
+
+        # Model transforms include things like tokenizing the prompt and action targets
+        model_transforms = ModelTransformFactory()(model_config)
+
+        # We return all data transforms for training and inference.
+        return dataclasses.replace(
+            self.create_base_config(assets_dirs, model_config),
+            repack_transforms=repack_transform,
+            data_transforms=data_transforms,
+            model_transforms=model_transforms,
+        )
+
+
+@dataclasses.dataclass(frozen=True)
 class TrainConfig:
     # Name of the config. Must be unique. Will be used to reference this config.
     name: tyro.conf.Suppress[str]
@@ -513,7 +545,7 @@ class TrainConfig:
     # How often (in steps) to log training metrics.
     log_interval: int = 100
     # How often (in steps) to save checkpoints.
-    save_interval: int = 1000
+    save_interval: int = 2000
     # If set, any existing checkpoints matching step % keep_period == 0 will not be deleted.
     keep_period: int | None = 5000
 
@@ -761,6 +793,69 @@ _CONFIGS = [
         pytorch_weight_path="/path/to/your/pytorch_weight_path",
         num_train_steps=30_000,
     ),
+    # LoRA fine-tuning configuration (for JAX train.py)
+    TrainConfig(
+        name="pi05_assembly_bun_lora",
+        model=pi0_config.Pi0Config(
+            pi05=True, 
+            action_horizon=10, 
+            discrete_state_input=False,
+            paligemma_variant="gemma_2b_lora",  # 启用 Paligemma 的 LoRA
+            action_expert_variant="gemma_300m_lora",  # 启用 action expert 的 LoRA
+        ),
+        data=LeRobotAssemblyBunDataConfig(
+            repo_id="assembly_bun_train",
+            base_config=DataConfig(prompt_from_task=True),
+        ),
+        batch_size=32,  # 批次大小，适合单GPU LoRA训练
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1000,  # 预热步数
+            peak_lr=5e-5,  # 学习率
+            decay_steps=20000,  # 与训练步数匹配
+            decay_lr=5e-6,
+        ),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,  # JAX支持EMA
+        # 使用JAX权重加载器
+        weight_loader=weight_loaders.CheckpointWeightLoader("/data3/yinmenghao/code/openpi/local_model/pi05_base_lora/params"),
+        num_train_steps=20000,  # 设置为20000训练步数
+        fsdp_devices=1,  # 使用1个GPU进行训练
+        freeze_filter=pi0_config.Pi0Config(
+            pi05=True,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+        ).get_freeze_filter(),  # 冻结非 LoRA 参数，只训练 LoRA 权重
+    ),
+    
+    # Full parameter fine-tuning configuration (for PyTorch train_pytorch.py)
+    TrainConfig(
+        name="pi05_assembly_bun_full",
+        model=pi0_config.Pi0Config(
+            pi05=True, 
+            action_horizon=10, 
+            discrete_state_input=False,
+            paligemma_variant="gemma_2b",  # 使用常规变体进行全参量训练
+            action_expert_variant="gemma_300m",  # 使用常规变体进行全参量训练
+        ),
+        data=LeRobotAssemblyBunDataConfig(
+            repo_id="assembly_bun_train",
+            base_config=DataConfig(prompt_from_task=True),
+        ),
+        batch_size=128,  # 批次大小，适合PyTorch全参量训练
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1000,  # 预热步数
+            peak_lr=5e-5,  # 学习率
+            decay_steps=20000,  # 与训练步数匹配
+            decay_lr=5e-6,
+        ),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=None,  # PyTorch 不支持 EMA
+        # 使用PyTorch权重路径
+        pytorch_weight_path="/data3/yinmenghao/code/openpi/local_model/pi05_base_full",
+        num_train_steps=20000,  # 设置为20000训练步数
+        fsdp_devices=6,  # 使用6个GPU进行训练
+        freeze_filter=None,  # 全参量训练，不需要冻结过滤器
+    ),
     #
     # Fine-tuning Aloha configs.
     #
@@ -965,6 +1060,7 @@ _CONFIGS = [
         exp_name="debug_pi05",
         wandb_enabled=False,
     ),
+
     # RoboArena & PolaRiS configs.
     *roboarena_config.get_roboarena_configs(),
     *polaris_config.get_polaris_configs(),

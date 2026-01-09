@@ -408,6 +408,11 @@ def train_loop(config: _config.TrainConfig):
 
     model = openpi.models_pytorch.pi0_pytorch.PI0Pytorch(model_cfg).to(device)
 
+    # Print trainable parameters
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    # Use ANSI escape sequence to print in yellow color
+    logging.info(f"\033[33mTrainable parameters: {trainable_params / 1e6:.2f}M\033[0m")
+
     if hasattr(model, "gradient_checkpointing_enable"):
         enable_gradient_checkpointing = True
         model.gradient_checkpointing_enable()

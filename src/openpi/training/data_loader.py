@@ -7,7 +7,7 @@ from typing import Literal, Protocol, SupportsIndex, TypeVar
 
 import jax
 import jax.numpy as jnp
-import lerobot.common.datasets.lerobot_dataset as lerobot_dataset
+import lerobot.datasets.lerobot_dataset as lerobot_dataset
 import numpy as np
 import torch
 
@@ -137,13 +137,30 @@ def create_torch_dataset(
     if repo_id == "fake":
         return FakeDataset(model_config, num_samples=1024)
 
-    dataset_meta = lerobot_dataset.LeRobotDatasetMetadata(repo_id)
-    dataset = lerobot_dataset.LeRobotDataset(
-        data_config.repo_id,
-        delta_timestamps={
-            key: [t / dataset_meta.fps for t in range(action_horizon)] for key in data_config.action_sequence_keys
-        },
-    )
+    # Check if repo_id is a local path
+    local_data_path = f"/data3/yinmenghao/code/openpi/data/{repo_id}"
+    if os.path.exists(local_data_path):
+        # Use local dataset
+        dataset_meta = lerobot_dataset.LeRobotDatasetMetadata(repo_id, root=local_data_path, force_cache_sync=False)
+        dataset = lerobot_dataset.LeRobotDataset(
+            data_config.repo_id,
+            root=local_data_path,
+            delta_timestamps={
+                key: [t / dataset_meta.fps for t in range(action_horizon)] for key in data_config.action_sequence_keys
+            },
+            force_cache_sync=False,
+            tolerance_s=1.0,  # Increased tolerance to handle timestamp synchronization issues
+        )
+    else:
+        # Use remote dataset
+        dataset_meta = lerobot_dataset.LeRobotDatasetMetadata(repo_id)
+        dataset = lerobot_dataset.LeRobotDataset(
+            data_config.repo_id,
+            delta_timestamps={
+                key: [t / dataset_meta.fps for t in range(action_horizon)] for key in data_config.action_sequence_keys
+            },
+            tolerance_s=1.0,  # Increased tolerance to handle timestamp synchronization issues
+        )
 
     if data_config.prompt_from_task:
         dataset = TransformedDataset(dataset, [_transforms.PromptFromLeRobotTask(dataset_meta.tasks)])

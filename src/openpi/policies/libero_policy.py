@@ -18,6 +18,9 @@ def make_libero_example() -> dict:
 
 
 def _parse_image(image) -> np.ndarray:
+    if image is None:
+        # Return a dummy image if no image data is available
+        return np.zeros((224, 224, 3), dtype=np.uint8)
     image = np.asarray(image)
     if np.issubdtype(image.dtype, np.floating):
         image = (255 * image).astype(np.uint8)

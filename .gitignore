@@ -1,9 +1,17 @@
-# Data directories.
-assets/
+# --- 修复后的核心过滤规则 ---
 checkpoints/
 data/
+local_model/
+local_transformers/
+third_party/
 wandb/
+assets/
+*.log
+train_log.txt
 
+# 即使拼写错误也能覆盖到的规则
+*model*/
+*weights*/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

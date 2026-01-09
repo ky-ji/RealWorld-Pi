@@ -102,6 +102,8 @@ def init_train_state(
         params = nnx.state(model)
         # Convert frozen params to bfloat16.
         params = nnx_utils.state_map(params, config.freeze_filter, lambda p: p.replace(p.value.astype(jnp.bfloat16)))
+        
+        # Note: We can't calculate trainable params during jax.eval_shape, so we'll do it later
 
         return training_utils.TrainState(
             step=0,
@@ -130,6 +132,37 @@ def init_train_state(
         out_shardings=state_sharding,
     )(init_rng, partial_params)
 
+    # Calculate and print trainable parameters
+    def count_params(params_dict, filter_func=None):
+        """Recursively count parameters in a nested dict."""
+        total = 0
+        for k, v in params_dict.items():
+            if isinstance(v, dict):
+                total += count_params(v, filter_func)
+            else:
+                # Check if this parameter should be counted
+                if filter_func is None or filter_func(k):
+                    total += v.size
+        return total
+
+    # Convert to pure dict for parameter counting
+    params_dict = train_state.params.to_pure_dict()
+    trainable_filter = config.trainable_filter
+    
+    # Create a function to check if a parameter path should be filtered
+    def should_include_param(param_path):
+        """Check if a parameter should be included in trainable count."""
+        # This is a simplified check - in practice, we'd need to recreate the full filter logic
+        # For LoRA, we're only training LoRA parameters
+        return 'lora' in param_path.lower()
+    
+    # Count all parameters and trainable parameters
+    total_params = count_params(params_dict)
+    trainable_params = count_params(params_dict, should_include_param)
+    
+    logging.info(f"\033[33mTotal parameters: {total_params / 1e6:.2f}M\033[0m")
+    logging.info(f"\033[33mTrainable parameters: {trainable_params / 1e6:.2f}M\033[0m")
+    
     return train_state, state_sharding
 
 
@@ -217,28 +250,34 @@ def main(config: _config.TrainConfig):
     )
     init_wandb(config, resuming=resuming, enabled=config.wandb_enabled)
 
-    data_loader = _data_loader.create_data_loader(
+    # Create training data loader
+    train_data_loader = _data_loader.create_data_loader(
         config,
         sharding=data_sharding,
         shuffle=True,
     )
-    data_iter = iter(data_loader)
-    batch = next(data_iter)
-    logging.info(f"Initialized data loader:\n{training_utils.array_tree_to_info(batch)}")
+    train_data_iter = iter(train_data_loader)
+    batch = next(train_data_iter)
+    logging.info(f"Initialized training data loader:\n{training_utils.array_tree_to_info(batch)}")
 
     # Log images from first batch to sanity check.
-    images_to_log = [
-        wandb.Image(np.concatenate([np.array(img[i]) for img in batch[0].images.values()], axis=1))
-        for i in range(min(5, len(next(iter(batch[0].images.values())))))
-    ]
+    # Log images from first batch to sanity check.
+    images_to_log = []
+    num_images_to_log = min(5, len(next(iter(batch[0].images.values()))))
+    for i in range(num_images_to_log):
+        concatenated_img = np.concatenate([np.array(img[i]) for img in batch[0].images.values()], axis=1)
+        images_to_log.append(wandb.Image(concatenated_img))
     wandb.log({"camera_views": images_to_log}, step=0)
+
+    # Create data loader reference for backward compatibility
+    data_loader = train_data_loader
 
     train_state, train_state_sharding = init_train_state(config, init_rng, mesh, resume=resuming)
     jax.block_until_ready(train_state)
     logging.info(f"Initialized train state:\n{training_utils.array_tree_to_info(train_state.params)}")
 
     if resuming:
-        train_state = _checkpoints.restore_state(checkpoint_manager, train_state, data_loader)
+        train_state = _checkpoints.restore_state(checkpoint_manager, train_state, train_data_loader)
 
     ptrain_step = jax.jit(
         functools.partial(train_step, config),
@@ -267,10 +306,10 @@ def main(config: _config.TrainConfig):
             pbar.write(f"Step {step}: {info_str}")
             wandb.log(reduced_info, step=step)
             infos = []
-        batch = next(data_iter)
+        batch = next(train_data_iter)
 
         if (step % config.save_interval == 0 and step > start_step) or step == config.num_train_steps - 1:
-            _checkpoints.save_state(checkpoint_manager, train_state, data_loader, step)
+            _checkpoints.save_state(checkpoint_manager, train_state, train_data_loader, step)
 
     logging.info("Waiting for checkpoint manager to finish")
     checkpoint_manager.wait_until_finished()
