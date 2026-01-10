@@ -397,7 +397,7 @@ def calculate_dataset_statistics(parquet_paths, output_dir):
             # Check if it's a numpy array or list of floats
             if isinstance(sample_data, np.ndarray) and sample_data.dtype in [np.float32, np.float64]:
                 float_features.append(feature)
-            elif isinstance(sample_data, list) and len(sample_data) > 0 and isinstance(sample_data[0], (float, np.float32, np.float64)):
+            elif isinstance(sample_data, list) and len(sample_data) > 0 and isinstance(sample_data[0], float | np.float32 | np.float64):
                 float_features.append(feature)
             elif isinstance(sample_data, float | np.float32 | np.float64):
                 # For scalar values like timestamp
