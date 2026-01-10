@@ -25,9 +25,9 @@ else:
     fs.get(source_url, dest_path, recursive=True)
     print(f"递归下载完成")
 
-print(f"assets下载完成！")
+print(f"assets下载完成!")
 print(f"下载的文件列表:")
-for root, dirs, files in os.walk(dest_path):
+for root, _dirs, files in os.walk(dest_path):
     for file in files:
         print(f"  {os.path.join(root, file)}")
 

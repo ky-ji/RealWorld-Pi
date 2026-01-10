@@ -1,0 +1,296 @@
+##[debug]Finished process 1991 with exit code 0, and elapsed time 00:00:00.0520552.
+##[debug]..=> 'a851cc20174cebf71abc60f56c8c1bc2517b04e495c0dcaa188930e3fd6efa3c'
+##[debug]=> 'pre-commit-3|/opt/hostedtoolcache/Python/3.14.2/x64|a851cc20174cebf71abc60f56c8c1bc2517b04e495c0dcaa188930e3fd6efa3c'
+##[debug]Result: 'pre-commit-3|/opt/hostedtoolcache/Python/3.14.2/x64|a851cc20174cebf71abc60f56c8c1bc2517b04e495c0dcaa188930e3fd6efa3c'
+##[debug]Loading env
+Run actions/cache@v4
+##[debug]Cache service version: v2
+##[debug]Resolved Keys:
+##[debug]["pre-commit-3|/opt/hostedtoolcache/Python/3.14.2/x64|a851cc20174cebf71abc60f56c8c1bc2517b04e495c0dcaa188930e3fd6efa3c"]
+##[debug]Checking zstd --quiet --version
+##[debug]1.5.7
+##[debug]zstd version: 1.5.7
+##[debug][Request] GetCacheEntryDownloadURL https://results-receiver.actions.githubusercontent.com/twirp/github.actions.results.api.v1.CacheService/GetCacheEntryDownloadURL
+##[debug][Response] - 200
+##[debug]Headers: {
+##[debug]  "content-length": "56",
+##[debug]  "content-type": "application/json",
+##[debug]  "date": "Sat, 10 Jan 2026 02:50:09 GMT",
+##[debug]  "x-github-backend": "Kubernetes",
+##[debug]  "x-github-request-id": "8008:3D3E4B:22D3E0:30746A:6961BE61"
+##[debug]}
+##[debug]Body: {
+##[debug]  "ok": false,
+##[debug]  "signed_download_url": "",
+##[debug]  "matched_key": ""
+##[debug]}
+##[debug]Cache not found for version 356db49e6bae2290b5c998bce2b5407d52ba33e30aa3d911773d957b563a16ad of keys: pre-commit-3|/opt/hostedtoolcache/Python/3.14.2/x64|a851cc20174cebf71abc60f56c8c1bc2517b04e495c0dcaa188930e3fd6efa3c
+Cache not found for input keys: pre-commit-3|/opt/hostedtoolcache/Python/3.14.2/x64|a851cc20174cebf71abc60f56c8c1bc2517b04e495c0dcaa188930e3fd6efa3c
+##[debug]Node Action run completed with exit code 0
+##[debug]Save intra-action state CACHE_KEY = pre-commit-3|/opt/hostedtoolcache/Python/3.14.2/x64|a851cc20174cebf71abc60f56c8c1bc2517b04e495c0dcaa188930e3fd6efa3c
+##[debug]Finished: run
+##[debug]Evaluating condition for step: 'run'
+##[debug]Evaluating: success()
+##[debug]Evaluating success:
+##[debug]=> true
+##[debug]Result: true
+##[debug]Starting: run
+##[debug]Loading inputs
+##[debug]Evaluating: format('pre-commit run --show-diff-on-failure --color=always {0}', inputs.extra_args)
+##[debug]Evaluating format:
+##[debug]..Evaluating String:
+##[debug]..=> 'pre-commit run --show-diff-on-failure --color=always {0}'
+##[debug]..Evaluating Index:
+##[debug]....Evaluating inputs:
+##[debug]....=> Object
+##[debug]....Evaluating String:
+##[debug]....=> 'extra_args'
+##[debug]..=> '--all-files'
+##[debug]=> 'pre-commit run --show-diff-on-failure --color=always --all-files'
+##[debug]Result: 'pre-commit run --show-diff-on-failure --color=always --all-files'
+##[debug]Loading env
+Run pre-commit run --show-diff-on-failure --color=always --all-files
+##[debug]/usr/bin/bash --noprofile --norc -e -o pipefail /home/runner/work/_temp/b24bd4d0-d84e-49c0-aba9-b099067af55a.sh
+[INFO] Initializing environment for https://github.com/astral-sh/uv-pre-commit.
+[INFO] Initializing environment for https://github.com/astral-sh/ruff-pre-commit.
+[INFO] Installing environment for https://github.com/astral-sh/uv-pre-commit.
+[INFO] Once installed this environment will be reused.
+[INFO] This may take a few minutes...
+[INFO] Installing environment for https://github.com/astral-sh/ruff-pre-commit.
+[INFO] Once installed this environment will be reused.
+[INFO] This may take a few minutes...
+uv-lock..................................................................Passed
+ruff.....................................................................Failed
+- hook id: ruff
+- exit code: 1
+- files were modified by this hook
+
+convert_assembly_bun_with_stats.py:83:57: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+   |
+81 |             "observation/wrist_image": None,
+82 |             "actions": action[i].tolist(),
+83 |             "timestamp": float(data["timestamp"][i]) if isinstance(data["timestamp"][i], (np.float32, np.float64)) else float(data["timestamp"][i]),
+   |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP038
+84 |             "task_index": 0,
+85 |             "episode_index": int(episode_idx),
+   |
+   = help: Convert to `X | Y`
+
+convert_assembly_bun_with_stats.py:91:5: PD901 Avoid using the generic variable name `df` for DataFrames
+   |
+90 |     # Create dataframe and write to parquet
+91 |     df = pd.DataFrame(rows)
+   |     ^^ PD901
+92 | 
+93 |     # Create data directory if it doesn't exist
+   |
+
+convert_assembly_bun_with_stats.py:261:9: PD901 Avoid using the generic variable name `df` for DataFrames
+    |
+259 |     for file_path in tqdm(parquet_files, desc=f"Checking parquet files in {dataset_dir}"):
+260 |         # Read the parquet file
+261 |         df = pd.read_parquet(file_path)
+    |         ^^ PD901
+262 | 
+263 |         # Rename columns if they exist
+    |
+
+convert_assembly_bun_with_stats.py:278:13: PD901 Avoid using the generic variable name `df` for DataFrames
+    |
+276 |         if rename_dict:
+277 |             # Rename the columns
+278 |             df = df.rename(columns=rename_dict)
+    |             ^^ PD901
+279 | 
+280 |             # Write the fixed parquet file back
+    |
+
+convert_assembly_bun_with_stats.py:398:167: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+    |
+396 |             sample_data = all_low_dim_data[feature].iloc[0]
+397 |             # Check if it's a numpy array or list of floats
+398 |             if (isinstance(sample_data, np.ndarray) and sample_data.dtype in [np.float32, np.float64]) or (isinstance(sample_data, list) and len(sample_data) > 0 and isinstance(sample_data[0], (float, np.float32, np.float64))):
+    |                                                                                                                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP038
+399 |                 float_features.append(feature)
+400 |             elif isinstance(sample_data, (float, np.float32, np.float64)):
+    |
+    = help: Convert to `X | Y`
+
+convert_assembly_bun_with_stats.py:400:18: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+    |
+398 |             if (isinstance(sample_data, np.ndarray) and sample_data.dtype in [np.float32, np.float64]) or (isinstance(sample_data, list) and len(sample_data) > 0 and isinstance(sample_data[0], (float, np.float32, np.float64))):
+399 |                 float_features.append(feature)
+400 |             elif isinstance(sample_data, (float, np.float32, np.float64)):
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP038
+401 |                 # For scalar values like timestamp
+402 |                 float_features.append(feature)
+    |
+    = help: Convert to `X | Y`
+
+convert_assembly_bun_with_stats.py:407:24: PD011 Use `.to_numpy()` instead of `.values`
+    |
+405 |         print(f"Computing statistics for {le_modality}...")
+406 |         # Get all data for this feature
+407 |         feature_data = all_low_dim_data[le_modality].values
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ PD011
+408 | 
+409 |         # Convert to numpy array
+    |
+
+convert_assembly_bun_with_stats.py:413:14: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+    |
+411 |             # For multi-dimensional features like observation.state and action
+412 |             np_data = np.vstack([np.asarray(x, dtype=np.float32) for x in feature_data])
+413 |         elif isinstance(feature_data[0], (float, np.float32, np.float64)):
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP038
+414 |             # For scalar features like timestamp
+415 |             np_data = np.asarray(feature_data, dtype=np.float32).reshape(-1, 1)
+    |
+    = help: Convert to `X | Y`
+
+convert_assembly_bun_with_stats.py:504:21: B007 Loop control variable `files` not used within loop body
+    |
+502 |     # Collect all episode directories
+503 |     episode_dirs = []
+504 |     for root, dirs, files in os.walk(raw_data_dir):
+    |                     ^^^^^ B007
+505 |         for dir_name in dirs:
+506 |             if dir_name.startswith("episode_"):
+    |
+    = help: Rename unused `files` to `_files`
+
+download_assets.py:28:18: RUF001 String contains ambiguous `！` (FULLWIDTH EXCLAMATION MARK). Did you mean `!` (EXCLAMATION MARK)?
+   |
+26 |     print("递归下载完成")
+27 | 
+28 | print("assets下载完成！")
+   |                      ^^ RUF001
+29 | print("下载的文件列表:")
+30 | for root, dirs, files in os.walk(dest_path):
+   |
+
+download_assets.py:30:11: B007 Loop control variable `dirs` not used within loop body
+   |
+28 | print("assets下载完成！")
+29 | print("下载的文件列表:")
+30 | for root, dirs, files in os.walk(dest_path):
+   |           ^^^^ B007
+31 |     for file in files:
+32 |         print(f"  {os.path.join(root, file)}")
+   |
+   = help: Rename unused `dirs` to `_dirs`
+
+download_jax_model.py:22:14: RUF001 String contains ambiguous `！` (FULLWIDTH EXCLAMATION MARK). Did you mean `!` (EXCLAMATION MARK)?
+   |
+20 | fs.get(source_url, dest_path, recursive=True)
+21 | 
+22 | print("模型下载完成！")
+   |                    ^^ RUF001
+23 | print(f"下载的模型大小：{shutil.disk_usage(dest_path).used / 1024 / 1024:.2f} MB")
+   |
+
+download_jax_model.py:23:16: RUF001 String contains ambiguous `：` (FULLWIDTH COLON). Did you mean `:` (COLON)?
+   |
+22 | print("模型下载完成！")
+23 | print(f"下载的模型大小：{shutil.disk_usage(dest_path).used / 1024 / 1024:.2f} MB")
+   |                       ^^ RUF001
+   |
+
+download_model.py:22:28: RUF003 Comment contains ambiguous `，` (FULLWIDTH COMMA). Did you mean `,` (COMMA)?
+   |
+20 |     src_item = os.path.join(checkpoint_dir, item)
+21 | 
+22 |     # 如果是 params.partial 目录，复制其中的 params 子目录
+   |                                 ^^ RUF003
+23 |     if item == "params.partial" and os.path.isdir(src_item):
+24 |         params_src = os.path.join(src_item, "params")
+   |
+
+fix_parquet_columns.py:29:9: PD901 Avoid using the generic variable name `df` for DataFrames
+   |
+27 |     for file_path in tqdm(parquet_files, desc=f"Fixing parquet files in {dataset_dir}"):
+28 |         # Read the parquet file
+29 |         df = pd.read_parquet(file_path)
+   |         ^^ PD901
+30 | 
+31 |         # Rename columns if they exist
+   |
+
+fix_parquet_columns.py:44:13: PD901 Avoid using the generic variable name `df` for DataFrames
+   |
+42 |         if rename_dict:
+43 |             # Rename the columns
+44 |             df = df.rename(columns=rename_dict)
+   |             ^^ PD901
+45 | 
+46 |             # Write the fixed parquet file back
+   |
+
+scripts/train.py:149:5: F841 Local variable `trainable_filter` is assigned to but never used
+    |
+147 |     # Convert to pure dict for parameter counting
+148 |     params_dict = train_state.params.to_pure_dict()
+149 |     trainable_filter = config.trainable_filter
+    |     ^^^^^^^^^^^^^^^^ F841
+150 | 
+151 |     # Create a function to check if a parameter path should be filtered
+    |
+    = help: Remove assignment to unused variable `trainable_filter`
+
+scripts/train.py:272:5: F841 Local variable `data_loader` is assigned to but never used
+    |
+271 |     # Create data loader reference for backward compatibility
+272 |     data_loader = train_data_loader
+    |     ^^^^^^^^^^^ F841
+273 | 
+274 |     train_state, train_state_sharding = init_train_state(config, init_rng, mesh, resume=resuming)
+    |
+    = help: Remove assignment to unused variable `data_loader`
+
+src/openpi/training/config.py:810:31: RUF003 Comment contains ambiguous `，` (FULLWIDTH COMMA). Did you mean `,` (COMMA)?
+    |
+808 |             base_config=DataConfig(prompt_from_task=True),
+809 |         ),
+810 |         batch_size=32,  # 批次大小，适合单GPU LoRA训练
+    |                                   ^^ RUF003
+811 |         lr_schedule=_optimizer.CosineDecaySchedule(
+812 |             warmup_steps=1000,  # 预热步数
+    |
+
+src/openpi/training/config.py:827:46: RUF003 Comment contains ambiguous `，` (FULLWIDTH COMMA). Did you mean `,` (COMMA)?
+    |
+825 |             paligemma_variant="gemma_2b_lora",
+826 |             action_expert_variant="gemma_300m_lora",
+827 |         ).get_freeze_filter(),  # 冻结非 LoRA 参数，只训练 LoRA 权重
+    |                                                   ^^ RUF003
+828 |     ),
+    |
+
+src/openpi/training/config.py:844:32: RUF003 Comment contains ambiguous `，` (FULLWIDTH COMMA). Did you mean `,` (COMMA)?
+    |
+842 |             base_config=DataConfig(prompt_from_task=True),
+843 |         ),
+844 |         batch_size=128,  # 批次大小，适合PyTorch全参量训练
+    |                                    ^^ RUF003
+845 |         lr_schedule=_optimizer.CosineDecaySchedule(
+846 |             warmup_steps=1000,  # 预热步数
+    |
+
+src/openpi/training/config.py:857:37: RUF003 Comment contains ambiguous `，` (FULLWIDTH COMMA). Did you mean `,` (COMMA)?
+    |
+855 |         num_train_steps=20000,  # 设置为20000训练步数
+856 |         fsdp_devices=6,  # 使用6个GPU进行训练
+857 |         freeze_filter=None,  # 全参量训练，不需要冻结过滤器
+    |                                          ^^ RUF003
+858 |     ),
+859 |     #
+    |
+
+Found 307 errors (285 fixed, 22 remaining).
+No fixes available (8 hidden fixes can be enabled with the `--unsafe-fixes` option).
+
+ruff-format..............................................................Failed
+- hook id: ruff-format
+- files were modified by this hook
+
+6 files reformatted, 70 files left unchanged

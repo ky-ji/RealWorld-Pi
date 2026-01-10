@@ -147,7 +147,6 @@ def init_train_state(
 
     # Convert to pure dict for parameter counting
     params_dict = train_state.params.to_pure_dict()
-    trainable_filter = config.trainable_filter
     
     # Create a function to check if a parameter path should be filtered
     def should_include_param(param_path):
@@ -268,9 +267,6 @@ def main(config: _config.TrainConfig):
         concatenated_img = np.concatenate([np.array(img[i]) for img in batch[0].images.values()], axis=1)
         images_to_log.append(wandb.Image(concatenated_img))
     wandb.log({"camera_views": images_to_log}, step=0)
-
-    # Create data loader reference for backward compatibility
-    data_loader = train_data_loader
 
     train_state, train_state_sharding = init_train_state(config, init_rng, mesh, resume=resuming)
     jax.block_until_ready(train_state)

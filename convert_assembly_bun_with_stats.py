@@ -80,7 +80,7 @@ def process_episode(episode_dir, episode_idx, output_dir, global_idx, task_descr
             'observation/image': None,
             'observation/wrist_image': None,
             'actions': action[i].tolist(),
-            'timestamp': float(data['timestamp'][i]) if isinstance(data['timestamp'][i], (np.float32, np.float64)) else float(data['timestamp'][i]),
+            'timestamp': float(data['timestamp'][i]) if isinstance(data['timestamp'][i], np.float32 | np.float64) else float(data['timestamp'][i]),
             'task_index': 0,
             'episode_index': int(episode_idx),
             'index': int(i),
@@ -88,14 +88,14 @@ def process_episode(episode_dir, episode_idx, output_dir, global_idx, task_descr
         rows.append(row)
     
     # Create dataframe and write to parquet
-    df = pd.DataFrame(rows)
+    episode_df = pd.DataFrame(rows)
     
     # Create data directory if it doesn't exist
     parquet_dir = os.path.join(output_dir, 'data', 'chunk-000')
     os.makedirs(parquet_dir, exist_ok=True)
     
     parquet_output = os.path.join(parquet_dir, f'episode_{episode_idx:06d}.parquet')
-    df.to_parquet(parquet_output, index=False)
+    episode_df.to_parquet(parquet_output, index=False)
     
     # Add to episodes.jsonl (use 'length' instead of 'num_frames' for v2.0 compatibility)
     episode_entry = {
@@ -258,27 +258,27 @@ def fix_parquet_columns(dataset_dir):
     # Iterate over all parquet files and check/rename columns
     for file_path in tqdm(parquet_files, desc=f"Checking parquet files in {dataset_dir}"):
         # Read the parquet file
-        df = pd.read_parquet(file_path)
+        parquet_df = pd.read_parquet(file_path)
         
         # Rename columns if they exist
         rename_dict = {}
-        if 'action' in df.columns:
+        if 'action' in parquet_df.columns:
             rename_dict['action'] = 'actions'
-        if 'observation.state' in df.columns:
+        if 'observation.state' in parquet_df.columns:
             rename_dict['observation.state'] = 'observation/state'
         
         # Add image columns if they don't exist
-        if 'observation/image' not in df.columns:
-            df['observation/image'] = None
-        if 'observation/wrist_image' not in df.columns:
-            df['observation/wrist_image'] = None
+        if 'observation/image' not in parquet_df.columns:
+            parquet_df['observation/image'] = None
+        if 'observation/wrist_image' not in parquet_df.columns:
+            parquet_df['observation/wrist_image'] = None
         
         if rename_dict:
             # Rename the columns
-            df = df.rename(columns=rename_dict)
+            parquet_df = parquet_df.rename(columns=rename_dict)
             
             # Write the fixed parquet file back
-            df.to_parquet(file_path, index=False)
+            parquet_df.to_parquet(file_path, index=False)
     
     print(f"Fixed all parquet files in {dataset_dir}")
 
@@ -399,20 +399,20 @@ def calculate_dataset_statistics(parquet_paths, output_dir):
                 float_features.append(feature)
             elif isinstance(sample_data, list) and len(sample_data) > 0 and isinstance(sample_data[0], (float, np.float32, np.float64)):
                 float_features.append(feature)
-            elif isinstance(sample_data, (float, np.float32, np.float64)):
+            elif isinstance(sample_data, float | np.float32 | np.float64):
                 # For scalar values like timestamp
                 float_features.append(feature)
     
     for le_modality in float_features:
         print(f"Computing statistics for {le_modality}...")
         # Get all data for this feature
-        feature_data = all_low_dim_data[le_modality].values
+        feature_data = all_low_dim_data[le_modality].to_numpy()
         
         # Convert to numpy array
         if isinstance(feature_data[0], np.ndarray):
             # For multi-dimensional features like observation.state and action
             np_data = np.vstack([np.asarray(x, dtype=np.float32) for x in feature_data])
-        elif isinstance(feature_data[0], (float, np.float32, np.float64)):
+        elif isinstance(feature_data[0], float | np.float32 | np.float64):
             # For scalar features like timestamp
             np_data = np.asarray(feature_data, dtype=np.float32).reshape(-1, 1)
         else:
@@ -503,7 +503,7 @@ def main(
     
     # Collect all episode directories
     episode_dirs = []
-    for root, dirs, files in os.walk(raw_data_dir):
+    for root, dirs, _files in os.walk(raw_data_dir):
         for dir_name in dirs:
             if dir_name.startswith("episode_"):
                 episode_dir = os.path.join(root, dir_name)

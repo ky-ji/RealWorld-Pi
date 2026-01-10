@@ -807,7 +807,7 @@ _CONFIGS = [
             repo_id="assembly_bun_train",
             base_config=DataConfig(prompt_from_task=True),
         ),
-        batch_size=32,  # 批次大小，适合单GPU LoRA训练
+        batch_size=32,  # 批次大小, 适合单GPU LoRA训练
         lr_schedule=_optimizer.CosineDecaySchedule(
             warmup_steps=1000,  # 预热步数
             peak_lr=5e-5,  # 学习率
@@ -824,7 +824,7 @@ _CONFIGS = [
             pi05=True,
             paligemma_variant="gemma_2b_lora",
             action_expert_variant="gemma_300m_lora",
-        ).get_freeze_filter(),  # 冻结非 LoRA 参数，只训练 LoRA 权重
+        ).get_freeze_filter(),  # 冻结非 LoRA 参数, 只训练 LoRA 权重
     ),
     
     # Full parameter fine-tuning configuration (for PyTorch train_pytorch.py)
@@ -841,7 +841,7 @@ _CONFIGS = [
             repo_id="assembly_bun_train",
             base_config=DataConfig(prompt_from_task=True),
         ),
-        batch_size=128,  # 批次大小，适合PyTorch全参量训练
+        batch_size=128,  # 批次大小, 适合PyTorch全参量训练
         lr_schedule=_optimizer.CosineDecaySchedule(
             warmup_steps=1000,  # 预热步数
             peak_lr=5e-5,  # 学习率
@@ -854,7 +854,7 @@ _CONFIGS = [
         pytorch_weight_path="/data3/yinmenghao/code/openpi/local_model/pi05_base_full",
         num_train_steps=20000,  # 设置为20000训练步数
         fsdp_devices=6,  # 使用6个GPU进行训练
-        freeze_filter=None,  # 全参量训练，不需要冻结过滤器
+        freeze_filter=None,  # 全参量训练, 不需要冻结过滤器
     ),
     #
     # Fine-tuning Aloha configs.

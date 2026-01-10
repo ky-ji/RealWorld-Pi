@@ -18,7 +18,7 @@ print(f"正在将模型复制到: {local_model_dir}")
 for item in os.listdir(checkpoint_dir):
     src_item = os.path.join(checkpoint_dir, item)
     
-    # 如果是 params.partial 目录，复制其中的 params 子目录
+    # 如果是 params.partial 目录, 复制其中的 params 子目录
     if item == "params.partial" and os.path.isdir(src_item):
         params_src = os.path.join(src_item, "params")
         params_dst = os.path.join(local_model_dir, "params")

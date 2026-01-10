@@ -24,25 +24,25 @@ def fix_parquet_columns(dataset_dir):
     # Iterate over all parquet files and rename columns
     for file_path in tqdm(parquet_files, desc=f"Fixing parquet files in {dataset_dir}"):
         # Read the parquet file
-        df = pd.read_parquet(file_path)
+        parquet_df = pd.read_parquet(file_path)
         
         # Rename columns if they exist
         rename_dict = {}
-        if 'action' in df.columns:
+        if 'action' in parquet_df.columns:
             rename_dict['action'] = 'actions'
-        if 'observation.state' in df.columns:
+        if 'observation.state' in parquet_df.columns:
             rename_dict['observation.state'] = 'observation/state'
-        if 'observation/image' not in df.columns:
+        if 'observation/image' not in parquet_df.columns:
             # Add empty image columns if they don't exist
-            df['observation/image'] = None
-            df['observation/wrist_image'] = None
+            parquet_df['observation/image'] = None
+            parquet_df['observation/wrist_image'] = None
         
         if rename_dict:
             # Rename the columns
-            df = df.rename(columns=rename_dict)
+            parquet_df = parquet_df.rename(columns=rename_dict)
             
             # Write the fixed parquet file back
-            df.to_parquet(file_path, index=False)
+            parquet_df.to_parquet(file_path, index=False)
     
     print(f"Fixed all parquet files in {dataset_dir}")
 
