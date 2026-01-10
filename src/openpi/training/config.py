@@ -797,8 +797,8 @@ _CONFIGS = [
     TrainConfig(
         name="pi05_assembly_bun_lora",
         model=pi0_config.Pi0Config(
-            pi05=True, 
-            action_horizon=10, 
+            pi05=True,
+            action_horizon=10,
             discrete_state_input=False,
             paligemma_variant="gemma_2b_lora",  # 启用 Paligemma 的 LoRA
             action_expert_variant="gemma_300m_lora",  # 启用 action expert 的 LoRA
@@ -817,7 +817,9 @@ _CONFIGS = [
         optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
         ema_decay=0.999,  # JAX支持EMA
         # 使用JAX权重加载器
-        weight_loader=weight_loaders.CheckpointWeightLoader("/data3/yinmenghao/code/openpi/local_model/pi05_base_lora/params"),
+        weight_loader=weight_loaders.CheckpointWeightLoader(
+            "/data3/yinmenghao/code/openpi/local_model/pi05_base_lora/params"
+        ),
         num_train_steps=20000,  # 设置为20000训练步数
         fsdp_devices=1,  # 使用1个GPU进行训练
         freeze_filter=pi0_config.Pi0Config(
@@ -826,13 +828,12 @@ _CONFIGS = [
             action_expert_variant="gemma_300m_lora",
         ).get_freeze_filter(),  # 冻结非 LoRA 参数, 只训练 LoRA 权重
     ),
-    
     # Full parameter fine-tuning configuration (for PyTorch train_pytorch.py)
     TrainConfig(
         name="pi05_assembly_bun_full",
         model=pi0_config.Pi0Config(
-            pi05=True, 
-            action_horizon=10, 
+            pi05=True,
+            action_horizon=10,
             discrete_state_input=False,
             paligemma_variant="gemma_2b",  # 使用常规变体进行全参量训练
             action_expert_variant="gemma_300m",  # 使用常规变体进行全参量训练
@@ -1060,7 +1061,6 @@ _CONFIGS = [
         exp_name="debug_pi05",
         wandb_enabled=False,
     ),
-
     # RoboArena & PolaRiS configs.
     *roboarena_config.get_roboarena_configs(),
     *polaris_config.get_polaris_configs(),

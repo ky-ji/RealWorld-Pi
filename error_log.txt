@@ -1,56 +1,50 @@
-##[debug]Finished process 1991 with exit code 0, and elapsed time 00:00:00.0520552.
-##[debug]..=> 'a851cc20174cebf71abc60f56c8c1bc2517b04e495c0dcaa188930e3fd6efa3c'
-##[debug]=> 'pre-commit-3|/opt/hostedtoolcache/Python/3.14.2/x64|a851cc20174cebf71abc60f56c8c1bc2517b04e495c0dcaa188930e3fd6efa3c'
-##[debug]Result: 'pre-commit-3|/opt/hostedtoolcache/Python/3.14.2/x64|a851cc20174cebf71abc60f56c8c1bc2517b04e495c0dcaa188930e3fd6efa3c'
-##[debug]Loading env
+Run pre-commit/action@v3.0.1
+Run python -m pip install pre-commit
+Collecting pre-commit
+  Downloading pre_commit-4.5.1-py2.py3-none-any.whl.metadata (1.2 kB)
+Collecting cfgv>=2.0.0 (from pre-commit)
+  Downloading cfgv-3.5.0-py2.py3-none-any.whl.metadata (8.9 kB)
+Collecting identify>=1.0.0 (from pre-commit)
+  Downloading identify-2.6.15-py2.py3-none-any.whl.metadata (4.4 kB)
+Collecting nodeenv>=0.11.1 (from pre-commit)
+  Downloading nodeenv-1.10.0-py2.py3-none-any.whl.metadata (24 kB)
+Collecting pyyaml>=5.1 (from pre-commit)
+  Downloading pyyaml-6.0.3-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (2.4 kB)
+Collecting virtualenv>=20.10.0 (from pre-commit)
+  Downloading virtualenv-20.36.1-py3-none-any.whl.metadata (4.7 kB)
+Collecting distlib<1,>=0.3.7 (from virtualenv>=20.10.0->pre-commit)
+  Downloading distlib-0.4.0-py2.py3-none-any.whl.metadata (5.2 kB)
+Collecting filelock<4,>=3.20.1 (from virtualenv>=20.10.0->pre-commit)
+  Downloading filelock-3.20.3-py3-none-any.whl.metadata (2.1 kB)
+Collecting platformdirs<5,>=3.9.1 (from virtualenv>=20.10.0->pre-commit)
+  Downloading platformdirs-4.5.1-py3-none-any.whl.metadata (12 kB)
+Downloading pre_commit-4.5.1-py2.py3-none-any.whl (226 kB)
+Downloading cfgv-3.5.0-py2.py3-none-any.whl (7.4 kB)
+Downloading identify-2.6.15-py2.py3-none-any.whl (99 kB)
+Downloading nodeenv-1.10.0-py2.py3-none-any.whl (23 kB)
+Downloading pyyaml-6.0.3-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (794 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━��━━━━━━━ 794.2/794.2 kB 35.7 MB/s  0:00:00
+Downloading virtualenv-20.36.1-py3-none-any.whl (6.0 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6.0/6.0 MB 157.9 MB/s  0:00:00
+Downloading distlib-0.4.0-py2.py3-none-any.whl (469 kB)
+Downloading filelock-3.20.3-py3-none-any.whl (16 kB)
+Downloading platformdirs-4.5.1-py3-none-any.whl (18 kB)
+Installing collected packages: distlib, pyyaml, platformdirs, nodeenv, identify, filelock, cfgv, virtualenv, pre-commit
+
+Successfully installed cfgv-3.5.0 distlib-0.4.0 filelock-3.20.3 identify-2.6.15 nodeenv-1.10.0 platformdirs-4.5.1 pre-commit-4.5.1 pyyaml-6.0.3 virtualenv-20.36.1
+Run python -m pip freeze --local
+cfgv==3.5.0
+distlib==0.4.0
+filelock==3.20.3
+identify==2.6.15
+nodeenv==1.10.0
+platformdirs==4.5.1
+pre_commit==4.5.1
+PyYAML==6.0.3
+virtualenv==20.36.1
 Run actions/cache@v4
-##[debug]Cache service version: v2
-##[debug]Resolved Keys:
-##[debug]["pre-commit-3|/opt/hostedtoolcache/Python/3.14.2/x64|a851cc20174cebf71abc60f56c8c1bc2517b04e495c0dcaa188930e3fd6efa3c"]
-##[debug]Checking zstd --quiet --version
-##[debug]1.5.7
-##[debug]zstd version: 1.5.7
-##[debug][Request] GetCacheEntryDownloadURL https://results-receiver.actions.githubusercontent.com/twirp/github.actions.results.api.v1.CacheService/GetCacheEntryDownloadURL
-##[debug][Response] - 200
-##[debug]Headers: {
-##[debug]  "content-length": "56",
-##[debug]  "content-type": "application/json",
-##[debug]  "date": "Sat, 10 Jan 2026 02:50:09 GMT",
-##[debug]  "x-github-backend": "Kubernetes",
-##[debug]  "x-github-request-id": "8008:3D3E4B:22D3E0:30746A:6961BE61"
-##[debug]}
-##[debug]Body: {
-##[debug]  "ok": false,
-##[debug]  "signed_download_url": "",
-##[debug]  "matched_key": ""
-##[debug]}
-##[debug]Cache not found for version 356db49e6bae2290b5c998bce2b5407d52ba33e30aa3d911773d957b563a16ad of keys: pre-commit-3|/opt/hostedtoolcache/Python/3.14.2/x64|a851cc20174cebf71abc60f56c8c1bc2517b04e495c0dcaa188930e3fd6efa3c
 Cache not found for input keys: pre-commit-3|/opt/hostedtoolcache/Python/3.14.2/x64|a851cc20174cebf71abc60f56c8c1bc2517b04e495c0dcaa188930e3fd6efa3c
-##[debug]Node Action run completed with exit code 0
-##[debug]Save intra-action state CACHE_KEY = pre-commit-3|/opt/hostedtoolcache/Python/3.14.2/x64|a851cc20174cebf71abc60f56c8c1bc2517b04e495c0dcaa188930e3fd6efa3c
-##[debug]Finished: run
-##[debug]Evaluating condition for step: 'run'
-##[debug]Evaluating: success()
-##[debug]Evaluating success:
-##[debug]=> true
-##[debug]Result: true
-##[debug]Starting: run
-##[debug]Loading inputs
-##[debug]Evaluating: format('pre-commit run --show-diff-on-failure --color=always {0}', inputs.extra_args)
-##[debug]Evaluating format:
-##[debug]..Evaluating String:
-##[debug]..=> 'pre-commit run --show-diff-on-failure --color=always {0}'
-##[debug]..Evaluating Index:
-##[debug]....Evaluating inputs:
-##[debug]....=> Object
-##[debug]....Evaluating String:
-##[debug]....=> 'extra_args'
-##[debug]..=> '--all-files'
-##[debug]=> 'pre-commit run --show-diff-on-failure --color=always --all-files'
-##[debug]Result: 'pre-commit run --show-diff-on-failure --color=always --all-files'
-##[debug]Loading env
 Run pre-commit run --show-diff-on-failure --color=always --all-files
-##[debug]/usr/bin/bash --noprofile --norc -e -o pipefail /home/runner/work/_temp/b24bd4d0-d84e-49c0-aba9-b099067af55a.sh
 [INFO] Initializing environment for https://github.com/astral-sh/uv-pre-commit.
 [INFO] Initializing environment for https://github.com/astral-sh/ruff-pre-commit.
 [INFO] Installing environment for https://github.com/astral-sh/uv-pre-commit.
@@ -62,235 +56,1176 @@ Run pre-commit run --show-diff-on-failure --color=always --all-files
 uv-lock..................................................................Passed
 ruff.....................................................................Failed
 - hook id: ruff
-- exit code: 1
 - files were modified by this hook
 
-convert_assembly_bun_with_stats.py:83:57: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
-   |
-81 |             "observation/wrist_image": None,
-82 |             "actions": action[i].tolist(),
-83 |             "timestamp": float(data["timestamp"][i]) if isinstance(data["timestamp"][i], (np.float32, np.float64)) else float(data["timestamp"][i]),
-   |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP038
-84 |             "task_index": 0,
-85 |             "episode_index": int(episode_idx),
-   |
-   = help: Convert to `X | Y`
-
-convert_assembly_bun_with_stats.py:91:5: PD901 Avoid using the generic variable name `df` for DataFrames
-   |
-90 |     # Create dataframe and write to parquet
-91 |     df = pd.DataFrame(rows)
-   |     ^^ PD901
-92 | 
-93 |     # Create data directory if it doesn't exist
-   |
-
-convert_assembly_bun_with_stats.py:261:9: PD901 Avoid using the generic variable name `df` for DataFrames
-    |
-259 |     for file_path in tqdm(parquet_files, desc=f"Checking parquet files in {dataset_dir}"):
-260 |         # Read the parquet file
-261 |         df = pd.read_parquet(file_path)
-    |         ^^ PD901
-262 | 
-263 |         # Rename columns if they exist
-    |
-
-convert_assembly_bun_with_stats.py:278:13: PD901 Avoid using the generic variable name `df` for DataFrames
-    |
-276 |         if rename_dict:
-277 |             # Rename the columns
-278 |             df = df.rename(columns=rename_dict)
-    |             ^^ PD901
-279 | 
-280 |             # Write the fixed parquet file back
-    |
-
-convert_assembly_bun_with_stats.py:398:167: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
-    |
-396 |             sample_data = all_low_dim_data[feature].iloc[0]
-397 |             # Check if it's a numpy array or list of floats
-398 |             if (isinstance(sample_data, np.ndarray) and sample_data.dtype in [np.float32, np.float64]) or (isinstance(sample_data, list) and len(sample_data) > 0 and isinstance(sample_data[0], (float, np.float32, np.float64))):
-    |                                                                                                                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP038
-399 |                 float_features.append(feature)
-400 |             elif isinstance(sample_data, (float, np.float32, np.float64)):
-    |
-    = help: Convert to `X | Y`
-
-convert_assembly_bun_with_stats.py:400:18: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
-    |
-398 |             if (isinstance(sample_data, np.ndarray) and sample_data.dtype in [np.float32, np.float64]) or (isinstance(sample_data, list) and len(sample_data) > 0 and isinstance(sample_data[0], (float, np.float32, np.float64))):
-399 |                 float_features.append(feature)
-400 |             elif isinstance(sample_data, (float, np.float32, np.float64)):
-    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP038
-401 |                 # For scalar values like timestamp
-402 |                 float_features.append(feature)
-    |
-    = help: Convert to `X | Y`
-
-convert_assembly_bun_with_stats.py:407:24: PD011 Use `.to_numpy()` instead of `.values`
-    |
-405 |         print(f"Computing statistics for {le_modality}...")
-406 |         # Get all data for this feature
-407 |         feature_data = all_low_dim_data[le_modality].values
-    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ PD011
-408 | 
-409 |         # Convert to numpy array
-    |
-
-convert_assembly_bun_with_stats.py:413:14: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
-    |
-411 |             # For multi-dimensional features like observation.state and action
-412 |             np_data = np.vstack([np.asarray(x, dtype=np.float32) for x in feature_data])
-413 |         elif isinstance(feature_data[0], (float, np.float32, np.float64)):
-    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP038
-414 |             # For scalar features like timestamp
-415 |             np_data = np.asarray(feature_data, dtype=np.float32).reshape(-1, 1)
-    |
-    = help: Convert to `X | Y`
-
-convert_assembly_bun_with_stats.py:504:21: B007 Loop control variable `files` not used within loop body
-    |
-502 |     # Collect all episode directories
-503 |     episode_dirs = []
-504 |     for root, dirs, files in os.walk(raw_data_dir):
-    |                     ^^^^^ B007
-505 |         for dir_name in dirs:
-506 |             if dir_name.startswith("episode_"):
-    |
-    = help: Rename unused `files` to `_files`
-
-download_assets.py:28:18: RUF001 String contains ambiguous `！` (FULLWIDTH EXCLAMATION MARK). Did you mean `!` (EXCLAMATION MARK)?
-   |
-26 |     print("递归下载完成")
-27 | 
-28 | print("assets下载完成！")
-   |                      ^^ RUF001
-29 | print("下载的文件列表:")
-30 | for root, dirs, files in os.walk(dest_path):
-   |
-
-download_assets.py:30:11: B007 Loop control variable `dirs` not used within loop body
-   |
-28 | print("assets下载完成！")
-29 | print("下载的文件列表:")
-30 | for root, dirs, files in os.walk(dest_path):
-   |           ^^^^ B007
-31 |     for file in files:
-32 |         print(f"  {os.path.join(root, file)}")
-   |
-   = help: Rename unused `dirs` to `_dirs`
-
-download_jax_model.py:22:14: RUF001 String contains ambiguous `！` (FULLWIDTH EXCLAMATION MARK). Did you mean `!` (EXCLAMATION MARK)?
-   |
-20 | fs.get(source_url, dest_path, recursive=True)
-21 | 
-22 | print("模型下载完成！")
-   |                    ^^ RUF001
-23 | print(f"下载的模型大小：{shutil.disk_usage(dest_path).used / 1024 / 1024:.2f} MB")
-   |
-
-download_jax_model.py:23:16: RUF001 String contains ambiguous `：` (FULLWIDTH COLON). Did you mean `:` (COLON)?
-   |
-22 | print("模型下载完成！")
-23 | print(f"下载的模型大小：{shutil.disk_usage(dest_path).used / 1024 / 1024:.2f} MB")
-   |                       ^^ RUF001
-   |
-
-download_model.py:22:28: RUF003 Comment contains ambiguous `，` (FULLWIDTH COMMA). Did you mean `,` (COMMA)?
-   |
-20 |     src_item = os.path.join(checkpoint_dir, item)
-21 | 
-22 |     # 如果是 params.partial 目录，复制其中的 params 子目录
-   |                                 ^^ RUF003
-23 |     if item == "params.partial" and os.path.isdir(src_item):
-24 |         params_src = os.path.join(src_item, "params")
-   |
-
-fix_parquet_columns.py:29:9: PD901 Avoid using the generic variable name `df` for DataFrames
-   |
-27 |     for file_path in tqdm(parquet_files, desc=f"Fixing parquet files in {dataset_dir}"):
-28 |         # Read the parquet file
-29 |         df = pd.read_parquet(file_path)
-   |         ^^ PD901
-30 | 
-31 |         # Rename columns if they exist
-   |
-
-fix_parquet_columns.py:44:13: PD901 Avoid using the generic variable name `df` for DataFrames
-   |
-42 |         if rename_dict:
-43 |             # Rename the columns
-44 |             df = df.rename(columns=rename_dict)
-   |             ^^ PD901
-45 | 
-46 |             # Write the fixed parquet file back
-   |
-
-scripts/train.py:149:5: F841 Local variable `trainable_filter` is assigned to but never used
-    |
-147 |     # Convert to pure dict for parameter counting
-148 |     params_dict = train_state.params.to_pure_dict()
-149 |     trainable_filter = config.trainable_filter
-    |     ^^^^^^^^^^^^^^^^ F841
-150 | 
-151 |     # Create a function to check if a parameter path should be filtered
-    |
-    = help: Remove assignment to unused variable `trainable_filter`
-
-scripts/train.py:272:5: F841 Local variable `data_loader` is assigned to but never used
-    |
-271 |     # Create data loader reference for backward compatibility
-272 |     data_loader = train_data_loader
-    |     ^^^^^^^^^^^ F841
-273 | 
-274 |     train_state, train_state_sharding = init_train_state(config, init_rng, mesh, resume=resuming)
-    |
-    = help: Remove assignment to unused variable `data_loader`
-
-src/openpi/training/config.py:810:31: RUF003 Comment contains ambiguous `，` (FULLWIDTH COMMA). Did you mean `,` (COMMA)?
-    |
-808 |             base_config=DataConfig(prompt_from_task=True),
-809 |         ),
-810 |         batch_size=32,  # 批次大小，适合单GPU LoRA训练
-    |                                   ^^ RUF003
-811 |         lr_schedule=_optimizer.CosineDecaySchedule(
-812 |             warmup_steps=1000,  # 预热步数
-    |
-
-src/openpi/training/config.py:827:46: RUF003 Comment contains ambiguous `，` (FULLWIDTH COMMA). Did you mean `,` (COMMA)?
-    |
-825 |             paligemma_variant="gemma_2b_lora",
-826 |             action_expert_variant="gemma_300m_lora",
-827 |         ).get_freeze_filter(),  # 冻结非 LoRA 参数，只训练 LoRA 权重
-    |                                                   ^^ RUF003
-828 |     ),
-    |
-
-src/openpi/training/config.py:844:32: RUF003 Comment contains ambiguous `，` (FULLWIDTH COMMA). Did you mean `,` (COMMA)?
-    |
-842 |             base_config=DataConfig(prompt_from_task=True),
-843 |         ),
-844 |         batch_size=128,  # 批次大小，适合PyTorch全参量训练
-    |                                    ^^ RUF003
-845 |         lr_schedule=_optimizer.CosineDecaySchedule(
-846 |             warmup_steps=1000,  # 预热步数
-    |
-
-src/openpi/training/config.py:857:37: RUF003 Comment contains ambiguous `，` (FULLWIDTH COMMA). Did you mean `,` (COMMA)?
-    |
-855 |         num_train_steps=20000,  # 设置为20000训练步数
-856 |         fsdp_devices=6,  # 使用6个GPU进行训练
-857 |         freeze_filter=None,  # 全参量训练，不需要冻结过滤器
-    |                                          ^^ RUF003
-858 |     ),
-859 |     #
-    |
-
-Found 307 errors (285 fixed, 22 remaining).
-No fixes available (8 hidden fixes can be enabled with the `--unsafe-fixes` option).
+Found 285 errors (285 fixed, 0 remaining).
 
 ruff-format..............................................................Failed
 - hook id: ruff-format
 - files were modified by this hook
 
 6 files reformatted, 70 files left unchanged
+
+pre-commit hook(s) made changes.
+If you are seeing this message in CI, reproduce locally with: `pre-commit run --all-files`.
+To run `pre-commit` as part of git workflow, use `pre-commit install`.
+All changes made by hooks:
+diff --git a/convert_assembly_bun_with_stats.py b/convert_assembly_bun_with_stats.py
+index 1809002..44a9a3c 100644
+--- a/convert_assembly_bun_with_stats.py
++++ b/convert_assembly_bun_with_stats.py
+@@ -6,125 +6,136 @@ Usage:
+ python convert_assembly_bun_with_stats.py --raw_data_dir /data3/yinmenghao/code/raw_data/assembly_bun --output_dir /data3/yinmenghao/code/openpi/data
+ """
+ 
++import json
+ import os
+-import sys
++from pathlib import Path
+ import pickle
+-import json
++import subprocess
++
+ import jsonlines
+-import pandas as pd
+ import numpy as np
+-import subprocess
+-from pathlib import Path
+-import tyro
++import pandas as pd
+ from tqdm import tqdm
++import tyro
+ 
+ 
+ def convert_images_to_mp4(image_dir, output_path, fps=10):
+     """Convert image sequence to MP4 using ffmpeg."""
+     cmd = [
+-        'ffmpeg', '-y',
+-        '-framerate', str(fps),
+-        '-i', os.path.join(image_dir, 'frame_%04d.jpg'),
+-        '-c:v', 'libx264',
+-        '-pix_fmt', 'yuv420p',
+-        output_path
++        "ffmpeg",
++        "-y",
++        "-framerate",
++        str(fps),
++        "-i",
++        os.path.join(image_dir, "frame_%04d.jpg"),
++        "-c:v",
++        "libx264",
++        "-pix_fmt",
++        "yuv420p",
++        output_path,
+     ]
+     subprocess.run(cmd, check=True, capture_output=True)
+ 
+ 
+-
+-def process_episode(episode_dir, episode_idx, output_dir, global_idx, task_description="move the pineapple bun from the conveyor belt to the center of the plate"):
++def process_episode(
++    episode_dir,
++    episode_idx,
++    output_dir,
++    global_idx,
++    task_description="move the pineapple bun from the conveyor belt to the center of the plate",
++):
+     """Process a single episode and convert it to LeRobot v2 format."""
+     print(f"Processing episode {episode_idx:04d}")
+-    
++
+     # Load data and meta
+-    data_path = os.path.join(episode_dir, 'data.pkl')
+-    meta_path = os.path.join(episode_dir, 'meta.json')
+-    
+-    with open(data_path, 'rb') as f:
++    data_path = os.path.join(episode_dir, "data.pkl")
++    meta_path = os.path.join(episode_dir, "meta.json")
++
++    with open(data_path, "rb") as f:
+         data = pickle.load(f)
+-    
+-    with open(meta_path, 'r') as f:
++
++    with open(meta_path) as f:
+         meta = json.load(f)
+-    
++
+     # Get episode length
+-    n_steps = meta['n_steps']
+-    
++    n_steps = meta["n_steps"]
++
+     # Create video directories if they don't exist
+-    image_dir = os.path.join(output_dir, 'videos', 'chunk-000', 'image')
++    image_dir = os.path.join(output_dir, "videos", "chunk-000", "image")
+     os.makedirs(image_dir, exist_ok=True)
+-    wrist_image_dir = os.path.join(output_dir, 'videos', 'chunk-000', 'wrist_image')
++    wrist_image_dir = os.path.join(output_dir, "videos", "chunk-000", "wrist_image")
+     os.makedirs(wrist_image_dir, exist_ok=True)
+-    
++
+     # Convert images to MP4 (using front_view as main image)
+-    front_image_dir = os.path.join(episode_dir, 'Images_front_view')
+-    image_output = os.path.join(image_dir, f'episode_{episode_idx:06d}.mp4')
++    front_image_dir = os.path.join(episode_dir, "Images_front_view")
++    image_output = os.path.join(image_dir, f"episode_{episode_idx:06d}.mp4")
+     convert_images_to_mp4(front_image_dir, image_output)
+-    
++
+     # Convert wrist view images to MP4
+-    wrist_image_source_dir = os.path.join(episode_dir, 'Images_wrist_view')
+-    wrist_image_output = os.path.join(wrist_image_dir, f'episode_{episode_idx:06d}.mp4')
++    wrist_image_source_dir = os.path.join(episode_dir, "Images_wrist_view")
++    wrist_image_output = os.path.join(wrist_image_dir, f"episode_{episode_idx:06d}.mp4")
+     convert_images_to_mp4(wrist_image_source_dir, wrist_image_output)
+-    
++
+     # Prepare state data: concatenate robot_eef_pose (7D) and robot_gripper (1D)
+-    state = np.hstack([data['robot_eef_pose'], data['robot_gripper'].reshape(-1, 1)])
+-    
++    state = np.hstack([data["robot_eef_pose"], data["robot_gripper"].reshape(-1, 1)])
++
+     # Prepare action data: concatenate action (7D) and action_gripper (1D)
+-    action = np.hstack([data['action'], data['action_gripper'].reshape(-1, 1)])
+-    
++    action = np.hstack([data["action"], data["action_gripper"].reshape(-1, 1)])
++
+     # Create data rows for parquet
+     rows = []
+     for i in range(n_steps):
+         row = {
+-            'observation/state': state[i].tolist(),
+-            'observation/image': None,
+-            'observation/wrist_image': None,
+-            'actions': action[i].tolist(),
+-            'timestamp': float(data['timestamp'][i]) if isinstance(data['timestamp'][i], np.float32 | np.float64) else float(data['timestamp'][i]),
+-            'task_index': 0,
+-            'episode_index': int(episode_idx),
+-            'index': int(i),
++            "observation/state": state[i].tolist(),
++            "observation/image": None,
++            "observation/wrist_image": None,
++            "actions": action[i].tolist(),
++            "timestamp": float(data["timestamp"][i])
++            if isinstance(data["timestamp"][i], np.float32 | np.float64)
++            else float(data["timestamp"][i]),
++            "task_index": 0,
++            "episode_index": int(episode_idx),
++            "index": int(i),
+         }
+         rows.append(row)
+-    
++
+     # Create dataframe and write to parquet
+     episode_df = pd.DataFrame(rows)
+-    
++
+     # Create data directory if it doesn't exist
+-    parquet_dir = os.path.join(output_dir, 'data', 'chunk-000')
++    parquet_dir = os.path.join(output_dir, "data", "chunk-000")
+     os.makedirs(parquet_dir, exist_ok=True)
+-    
+-    parquet_output = os.path.join(parquet_dir, f'episode_{episode_idx:06d}.parquet')
++
++    parquet_output = os.path.join(parquet_dir, f"episode_{episode_idx:06d}.parquet")
+     episode_df.to_parquet(parquet_output, index=False)
+-    
++
+     # Add to episodes.jsonl (use 'length' instead of 'num_frames' for v2.0 compatibility)
+     episode_entry = {
+-        'episode_index': episode_idx,
+-        'chunk_index': 0,
+-        'length': n_steps,  # Use 'length' instead of 'num_frames' for v2.0 compatibility
+-        'fps': 10,
+-        'start_time': meta['start_time'],
+-        'duration': meta['duration'],
+-        'task_index': 0
++        "episode_index": episode_idx,
++        "chunk_index": 0,
++        "length": n_steps,  # Use 'length' instead of 'num_frames' for v2.0 compatibility
++        "fps": 10,
++        "start_time": meta["start_time"],
++        "duration": meta["duration"],
++        "task_index": 0,
+     }
+-    
+-    return episode_entry, n_steps
+ 
++    return episode_entry, n_steps
+ 
+ 
+ def create_meta_files(output_dir, total_episodes, total_frames, task_description):
+     """Create the required meta files."""
+-    meta_dir = os.path.join(output_dir, 'meta')
++    meta_dir = os.path.join(output_dir, "meta")
+     os.makedirs(meta_dir, exist_ok=True)
+-    
++
+     # Create tasks.jsonl (use 'task' instead of 'language_instruction' for v2.0 compatibility)
+     tasks = [
+         {"task_index": 0, "task": task_description}  # Use 'task' instead of 'language_instruction'
+     ]
+-    tasks_path = os.path.join(meta_dir, 'tasks.jsonl')
+-    with jsonlines.open(tasks_path, 'w') as writer:
++    tasks_path = os.path.join(meta_dir, "tasks.jsonl")
++    with jsonlines.open(tasks_path, "w") as writer:
+         writer.write_all(tasks)
+-    
++
+     # Create modality.json
+     modality = {
+         "actions": [
+@@ -135,7 +146,7 @@ def create_meta_files(output_dir, total_episodes, total_frames, task_description
+             "eef_pose.qy",
+             "eef_pose.qz",
+             "eef_pose.qw",
+-            "gripper.pos"
++            "gripper.pos",
+         ],
+         "observation.state": [
+             "eef_pose.x",
+@@ -145,20 +156,20 @@ def create_meta_files(output_dir, total_episodes, total_frames, task_description
+             "eef_pose.qy",
+             "eef_pose.qz",
+             "eef_pose.qw",
+-            "gripper.pos"
++            "gripper.pos",
+         ],
+         "image": ["rgb"],
+-        "wrist_image": ["rgb"]
++        "wrist_image": ["rgb"],
+     }
+-    modality_path = os.path.join(meta_dir, 'modality.json')
+-    with open(modality_path, 'w') as f:
++    modality_path = os.path.join(meta_dir, "modality.json")
++    with open(modality_path, "w") as f:
+         json.dump(modality, f, indent=2)
+-    
++
+     # Create info.json with codebase_version: v2.0 for compatibility
+     info = {
+         "codebase_version": "v2.0",  # Use v2.0 instead of v2.1 for compatibility
+         "robot_type": "franka_robot",
+-        "dataset_name": output_dir.split('/')[-1],
++        "dataset_name": output_dir.split("/")[-1],
+         "dataset_version": "1.0",
+         "description": "Assembly bun dataset collected via teleoperation",
+         "creation_date": "2026-01-09",
+@@ -169,7 +180,7 @@ def create_meta_files(output_dir, total_episodes, total_frames, task_description
+         "fps": 10,
+         "splits": {
+             "train": "0:100" if "train" in output_dir else "0:0",
+-            "val": "0:100" if "val" in output_dir else "0:0"
++            "val": "0:100" if "val" in output_dir else "0:0",
+         },
+         "data_path": "data/chunk-{episode_chunk:03d}/episode_{episode_index:06d}.parquet",
+         "video_path": "videos/chunk-{episode_chunk:03d}/{video_key}/episode_{episode_index:06d}.mp4",
+@@ -184,9 +195,9 @@ def create_meta_files(output_dir, total_episodes, total_frames, task_description
+                     "eef_pose.qy",
+                     "eef_pose.qz",
+                     "eef_pose.qw",
+-                    "gripper.pos"
++                    "gripper.pos",
+                 ],
+-                "shape": [8]
++                "shape": [8],
+             },
+             "observation.state": {
+                 "dtype": "float32",
+@@ -198,136 +209,111 @@ def create_meta_files(output_dir, total_episodes, total_frames, task_description
+                     "eef_pose.qy",
+                     "eef_pose.qz",
+                     "eef_pose.qw",
+-                    "gripper.pos"
++                    "gripper.pos",
+                 ],
+-                "shape": [8]
+-            },
+-            "image": {
+-                "dtype": "image",
+-                "shape": [480, 640, 3],
+-                "names": ["height", "width", "channels"]
+-            },
+-            "wrist_image": {
+-                "dtype": "image",
+-                "shape": [480, 640, 3],
+-                "names": ["height", "width", "channels"]
+-            },
+-            "timestamp": {
+-                "dtype": "float32",
+-                "shape": [1],
+-                "names": None
+-            },
+-            "episode_index": {
+-                "dtype": "int64",
+-                "shape": [1],
+-                "names": None
+-            },
+-            "index": {
+-                "dtype": "int64",
+-                "shape": [1],
+-                "names": None
++                "shape": [8],
+             },
+-            "task_index": {
+-                "dtype": "int64",
+-                "shape": [1],
+-                "names": None
+-            }
++            "image": {"dtype": "image", "shape": [480, 640, 3], "names": ["height", "width", "channels"]},
++            "wrist_image": {"dtype": "image", "shape": [480, 640, 3], "names": ["height", "width", "channels"]},
++            "timestamp": {"dtype": "float32", "shape": [1], "names": None},
++            "episode_index": {"dtype": "int64", "shape": [1], "names": None},
++            "index": {"dtype": "int64", "shape": [1], "names": None},
++            "task_index": {"dtype": "int64", "shape": [1], "names": None},
+         },
+         "total_chunks": 0,
+-        "total_videos": total_episodes * 2
++        "total_videos": total_episodes * 2,
+     }
+-    info_path = os.path.join(meta_dir, 'info.json')
+-    with open(info_path, 'w') as f:
++    info_path = os.path.join(meta_dir, "info.json")
++    with open(info_path, "w") as f:
+         json.dump(info, f, indent=2)
+ 
+ 
+-
+ def fix_parquet_columns(dataset_dir):
+     """Fix parquet files by ensuring correct column names."""
+-    data_dir = os.path.join(dataset_dir, 'data')
+-    
++    data_dir = os.path.join(dataset_dir, "data")
++
+     # Get all parquet files
+-    parquet_files = list(Path(data_dir).glob('**/*.parquet'))
+-    
++    parquet_files = list(Path(data_dir).glob("**/*.parquet"))
++
+     if not parquet_files:
+         print(f"No parquet files found in {dataset_dir}, skipping...")
+         return
+-    
++
+     print(f"Found {len(parquet_files)} parquet files in {dataset_dir}")
+-    
++
+     # Iterate over all parquet files and check/rename columns
+     for file_path in tqdm(parquet_files, desc=f"Checking parquet files in {dataset_dir}"):
+         # Read the parquet file
+         parquet_df = pd.read_parquet(file_path)
+-        
++
+         # Rename columns if they exist
+         rename_dict = {}
+-        if 'action' in parquet_df.columns:
+-            rename_dict['action'] = 'actions'
+-        if 'observation.state' in parquet_df.columns:
+-            rename_dict['observation.state'] = 'observation/state'
+-        
++        if "action" in parquet_df.columns:
++            rename_dict["action"] = "actions"
++        if "observation.state" in parquet_df.columns:
++            rename_dict["observation.state"] = "observation/state"
++
+         # Add image columns if they don't exist
+-        if 'observation/image' not in parquet_df.columns:
+-            parquet_df['observation/image'] = None
+-        if 'observation/wrist_image' not in parquet_df.columns:
+-            parquet_df['observation/wrist_image'] = None
+-        
++        if "observation/image" not in parquet_df.columns:
++            parquet_df["observation/image"] = None
++        if "observation/wrist_image" not in parquet_df.columns:
++            parquet_df["observation/wrist_image"] = None
++
+         if rename_dict:
+             # Rename the columns
+             parquet_df = parquet_df.rename(columns=rename_dict)
+-            
++
+             # Write the fixed parquet file back
+             parquet_df.to_parquet(file_path, index=False)
+-    
++
+     print(f"Fixed all parquet files in {dataset_dir}")
+ 
+ 
+ def fix_dataset_meta(dataset_dir):
+     """Fix dataset metadata by ensuring correct field names."""
+-    meta_dir = os.path.join(dataset_dir, 'meta')
+-    
++    meta_dir = os.path.join(dataset_dir, "meta")
++
+     # Fix info.json
+-    info_path = os.path.join(meta_dir, 'info.json')
+-    with open(info_path, 'r') as f:
++    info_path = os.path.join(meta_dir, "info.json")
++    with open(info_path) as f:
+         info = json.load(f)
+-    
+-    if 'action' in info['features']:
+-        info['features']['actions'] = info['features'].pop('action')
+-        with open(info_path, 'w') as f:
++
++    if "action" in info["features"]:
++        info["features"]["actions"] = info["features"].pop("action")
++        with open(info_path, "w") as f:
+             json.dump(info, f, indent=2)
+         print(f"Fixed info.json in {dataset_dir}")
+-    
++
+     # Fix modality.json
+-    modality_path = os.path.join(meta_dir, 'modality.json')
+-    with open(modality_path, 'r') as f:
++    modality_path = os.path.join(meta_dir, "modality.json")
++    with open(modality_path) as f:
+         modality = json.load(f)
+-    
+-    if 'action' in modality:
+-        modality['actions'] = modality.pop('action')
+-        with open(modality_path, 'w') as f:
++
++    if "action" in modality:
++        modality["actions"] = modality.pop("action")
++        with open(modality_path, "w") as f:
+             json.dump(modality, f, indent=2)
+         print(f"Fixed modality.json in {dataset_dir}")
+-    
++
+     # Fix stats.json
+-    stats_path = os.path.join(meta_dir, 'stats.json')
+-    with open(stats_path, 'r') as f:
++    stats_path = os.path.join(meta_dir, "stats.json")
++    with open(stats_path) as f:
+         stats = json.load(f)
+-    
+-    if 'action' in stats:
+-        stats['actions'] = stats.pop('action')
+-        with open(stats_path, 'w') as f:
++
++    if "action" in stats:
++        stats["actions"] = stats.pop("action")
++        with open(stats_path, "w") as f:
+             json.dump(stats, f, indent=4)
+         print(f"Fixed stats.json in {dataset_dir}")
+-    
++
+     # Fix relative_stats.json
+-    relative_stats_path = os.path.join(meta_dir, 'relative_stats.json')
+-    with open(relative_stats_path, 'r') as f:
++    relative_stats_path = os.path.join(meta_dir, "relative_stats.json")
++    with open(relative_stats_path) as f:
+         relative_stats = json.load(f)
+-    
+-    if 'action' in relative_stats:
+-        relative_stats['actions'] = relative_stats.pop('action')
+-        with open(relative_stats_path, 'w') as f:
++
++    if "action" in relative_stats:
++        relative_stats["actions"] = relative_stats.pop("action")
++        with open(relative_stats_path, "w") as f:
+             json.dump(relative_stats, f, indent=4)
+         print(f"Fixed relative_stats.json in {dataset_dir}")
+ 
+@@ -335,16 +321,16 @@ def fix_dataset_meta(dataset_dir):
+ def fix_libero_policy():
+     """Fix libero_policy.py to handle None values in images."""
+     policy_file = "/data3/yinmenghao/code/openpi/src/openpi/policies/libero_policy.py"
+-    
++
+     # Read the current content of the file
+-    with open(policy_file, 'r') as f:
++    with open(policy_file) as f:
+         content = f.read()
+-    
++
+     # Check if the fix is already applied
+     if "if image is None:" in content:
+         print(f"{policy_file} already has the fix for None values in images, skipping...")
+         return
+-    
++
+     # Replace the _parse_image function with a version that handles None values
+     old_parse_image = """def _parse_image(image) -> np.ndarray:
+     image = np.asarray(image)
+@@ -353,7 +339,7 @@ def fix_libero_policy():
+     if image.shape[0] == 3:
+         image = einops.rearrange(image, "c h w -> h w c")
+     return image"""
+-    
++
+     new_parse_image = """def _parse_image(image) -> np.ndarray:
+     if image is None:
+         # Return a dummy image if no image data is available
+@@ -364,14 +350,14 @@ def fix_libero_policy():
+     if image.shape[0] == 3:
+         image = einops.rearrange(image, "c h w -> h w c")
+     return image"""
+-    
++
+     # Replace the function in the content
+     fixed_content = content.replace(old_parse_image, new_parse_image)
+-    
++
+     # Write the fixed content back to the file
+-    with open(policy_file, 'w') as f:
++    with open(policy_file, "w") as f:
+         f.write(fixed_content)
+-    
++
+     print(f"Fixed {policy_file} to handle None values in images")
+ 
+ 
+@@ -384,30 +370,32 @@ def calculate_dataset_statistics(parquet_paths, output_dir):
+         parquet_data = pd.read_parquet(parquet_path)
+         all_low_dim_data_list.append(parquet_data)
+     all_low_dim_data = pd.concat(all_low_dim_data_list, axis=0)
+-    
++
+     # Compute dataset statistics
+     dataset_statistics = {}
+     features = list(all_low_dim_data.columns)
+-    
++
+     # Filter only float features
+     float_features = []
+     for feature in features:
+         if feature in all_low_dim_data.columns:
+             sample_data = all_low_dim_data[feature].iloc[0]
+             # Check if it's a numpy array or list of floats
+-            if isinstance(sample_data, np.ndarray) and sample_data.dtype in [np.float32, np.float64]:
+-                float_features.append(feature)
+-            elif isinstance(sample_data, list) and len(sample_data) > 0 and isinstance(sample_data[0], float | np.float32 | np.float64):
++            if (isinstance(sample_data, np.ndarray) and sample_data.dtype in [np.float32, np.float64]) or (
++                isinstance(sample_data, list)
++                and len(sample_data) > 0
++                and isinstance(sample_data[0], float | np.float32 | np.float64)
++            ):
+                 float_features.append(feature)
+             elif isinstance(sample_data, float | np.float32 | np.float64):
+                 # For scalar values like timestamp
+                 float_features.append(feature)
+-    
++
+     for le_modality in float_features:
+         print(f"Computing statistics for {le_modality}...")
+         # Get all data for this feature
+         feature_data = all_low_dim_data[le_modality].to_numpy()
+-        
++
+         # Convert to numpy array
+         if isinstance(feature_data[0], np.ndarray):
+             # For multi-dimensional features like observation.state and action
+@@ -418,73 +406,71 @@ def calculate_dataset_statistics(parquet_paths, output_dir):
+         else:
+             # For list features
+             np_data = np.vstack([np.asarray(x, dtype=np.float32) for x in feature_data])
+-        
++
+         dataset_statistics[le_modality] = {
+             "mean": np.mean(np_data, axis=0).tolist(),
+             "std": np.std(np_data, axis=0).tolist(),
+             "min": np.min(np_data, axis=0).tolist(),
+             "max": np.max(np_data, axis=0).tolist(),
+             "q01": np.quantile(np_data, 0.01, axis=0).tolist(),
+-            "q99": np.quantile(np_data, 0.99, axis=0).tolist()
++            "q99": np.quantile(np_data, 0.99, axis=0).tolist(),
+         }
+-    
++
+     # Write stats.json
+-    meta_dir = os.path.join(output_dir, 'meta')
+-    stats_path = os.path.join(meta_dir, 'stats.json')
+-    with open(stats_path, 'w') as f:
++    meta_dir = os.path.join(output_dir, "meta")
++    stats_path = os.path.join(meta_dir, "stats.json")
++    with open(stats_path, "w") as f:
+         json.dump(dataset_statistics, f, indent=4)
+-    
++
+     # Write relative_stats.json (same as stats.json for now)
+-    relative_stats_path = os.path.join(meta_dir, 'relative_stats.json')
+-    with open(relative_stats_path, 'w') as f:
++    relative_stats_path = os.path.join(meta_dir, "relative_stats.json")
++    with open(relative_stats_path, "w") as f:
+         json.dump(dataset_statistics, f, indent=4)
+-    
++
+     print(f"Statistics saved to {stats_path}")
+     print(f"Relative statistics saved to {relative_stats_path}")
+     print(f"Features included: {list(dataset_statistics.keys())}")
+-    
+-    return dataset_statistics
+ 
++    return dataset_statistics
+ 
+ 
+ def process_dataset(episodes, output_dir, task_description, dataset_type):
+     """Process a list of episodes and create a LeRobot v2 dataset."""
+     print(f"Processing {dataset_type} dataset...")
+-    
++
+     # Create output directory if it doesn't exist
+     os.makedirs(output_dir, exist_ok=True)
+-    
++
+     # Process episodes
+     episode_entries = []
+     total_frames = 0
+-    
++
+     for episode_idx, episode_dir in enumerate(episodes):
+         episode_entry, n_steps = process_episode(episode_dir, episode_idx, output_dir, total_frames, task_description)
+         episode_entries.append(episode_entry)
+         total_frames += n_steps
+-    
++
+     # Create meta files
+     create_meta_files(output_dir, len(episode_entries), total_frames, task_description)
+-    
++
+     # Write episodes.jsonl
+-    episodes_path = os.path.join(output_dir, 'meta', 'episodes.jsonl')
+-    with jsonlines.open(episodes_path, 'w') as writer:
++    episodes_path = os.path.join(output_dir, "meta", "episodes.jsonl")
++    with jsonlines.open(episodes_path, "w") as writer:
+         writer.write_all(episode_entries)
+-    
++
+     # Calculate and write statistics
+     parquet_files = list(Path(output_dir).glob("data/*/*.parquet"))
+     calculate_dataset_statistics(parquet_files, output_dir)
+-    
++
+     # Fix parquet columns to ensure correct format
+     fix_parquet_columns(output_dir)
+-    
++
+     # Fix dataset metadata to ensure correct field names
+     fix_dataset_meta(output_dir)
+-    
++
+     print(f"Successfully created {dataset_type} dataset with {len(episode_entries)} episodes and {total_frames} frames")
+-    
+-    return output_dir
+ 
++    return output_dir
+ 
+ 
+ def main(
+@@ -500,46 +486,47 @@ def main(
+     print(f"Output directory: {output_dir}")
+     print(f"Train/val split ratio: {split_ratio}:{1-split_ratio}")
+     print(f"Task description: {task_description}")
+-    
++
+     # Collect all episode directories
+     episode_dirs = []
+     for root, dirs, _files in os.walk(raw_data_dir):
+         for dir_name in dirs:
+             if dir_name.startswith("episode_"):
+                 episode_dir = os.path.join(root, dir_name)
+-                if os.path.exists(os.path.join(episode_dir, "data.pkl")) and os.path.exists(os.path.join(episode_dir, "meta.json")):
++                if os.path.exists(os.path.join(episode_dir, "data.pkl")) and os.path.exists(
++                    os.path.join(episode_dir, "meta.json")
++                ):
+                     episode_dirs.append(episode_dir)
+-    
++
+     # Sort episode directories by episode number
+     episode_dirs.sort(key=lambda x: int(x.split("episode_")[-1]))
+-    
++
+     # Split into train and validation sets
+     num_episodes = len(episode_dirs)
+     num_train = int(num_episodes * split_ratio)
+     train_episodes = episode_dirs[:num_train]
+     val_episodes = episode_dirs[num_train:]
+-    
++
+     print(f"Found {num_episodes} episodes")
+     print(f"Train set: {len(train_episodes)} episodes")
+     print(f"Validation set: {len(val_episodes)} episodes")
+-    
++
+     # Process train dataset
+     train_output_dir = os.path.join(output_dir, "assembly_bun_train")
+     process_dataset(train_episodes, train_output_dir, task_description, "train")
+-    
++
+     # Process validation dataset
+     val_output_dir = os.path.join(output_dir, "assembly_bun_val")
+     process_dataset(val_episodes, val_output_dir, task_description, "validation")
+-    
++
+     # Apply fixes to libero_policy.py to handle None values in images
+     fix_libero_policy()
+-    
++
+     print("\nDataset conversion completed successfully!")
+     print(f"Train dataset saved to: {train_output_dir}")
+     print(f"Validation dataset saved to: {val_output_dir}")
+     print("All fixes applied successfully!")
+ 
+ 
+-
+ if __name__ == "__main__":
+-    tyro.cli(main)
+\ No newline at end of file
++    tyro.cli(main)
+diff --git a/download_assets.py b/download_assets.py
+index cafb393..bdb244b 100644
+--- a/download_assets.py
++++ b/download_assets.py
+@@ -1,7 +1,7 @@
+-import fsspec
+ import os
+ import pathlib
+-import shutil
++
++import fsspec
+ 
+ # 定义源路径和目标路径
+ source_url = "gs://openpi-assets/checkpoints/pi05_base/assets"
+@@ -21,13 +21,12 @@ if not fs.exists(source_url):
+     print(f"源目录 {source_url} 不存在")
+ else:
+     # 使用 fs.get 递归下载整个目录
+-    print(f"开始递归下载整个目录")
++    print("开始递归下载整个目录")
+     fs.get(source_url, dest_path, recursive=True)
+-    print(f"递归下载完成")
++    print("递归下载完成")
+ 
+-print(f"assets下载完成!")
+-print(f"下载的文件列表:")
++print("assets下载完成!")
++print("下载的文件列表:")
+ for root, _dirs, files in os.walk(dest_path):
+     for file in files:
+         print(f"  {os.path.join(root, file)}")
+-
+diff --git a/download_jax_model.py b/download_jax_model.py
+index 3c06e04..6048301 100644
+--- a/download_jax_model.py
++++ b/download_jax_model.py
+@@ -1,7 +1,7 @@
+-import fsspec
+-import os
+-import shutil
+ import pathlib
++import shutil
++
++import fsspec
+ 
+ # 定义源路径和目标路径
+ source_url = "gs://openpi-assets/checkpoints/pi05_base/params"
+@@ -19,5 +19,5 @@ print(f"正在从 {source_url} 下载模型到 {dest_path}")
+ fs, _ = fsspec.core.url_to_fs(source_url)
+ fs.get(source_url, dest_path, recursive=True)
+ 
+-print(f"模型下载完成!")
++print("模型下载完成!")
+ print(f"下载的模型大小: {shutil.disk_usage(dest_path).used / 1024 / 1024:.2f} MB")
+diff --git a/download_model.py b/download_model.py
+index 17ac2b8..b066cb4 100644
+--- a/download_model.py
++++ b/download_model.py
+@@ -1,7 +1,8 @@
+-from openpi.shared import download
+-import shutil
+ import os
+ import pathlib
++import shutil
++
++from openpi.shared import download
+ 
+ # 使用 maybe_download 函数下载模型
+ checkpoint_dir = download.maybe_download("gs://openpi-assets/checkpoints/pi05_base")
+@@ -17,12 +18,12 @@ print(f"正在将模型复制到: {local_model_dir}")
+ # 检查 checkpoint_dir 中的文件和目录
+ for item in os.listdir(checkpoint_dir):
+     src_item = os.path.join(checkpoint_dir, item)
+-    
++
+     # 如果是 params.partial 目录, 复制其中的 params 子目录
+     if item == "params.partial" and os.path.isdir(src_item):
+         params_src = os.path.join(src_item, "params")
+         params_dst = os.path.join(local_model_dir, "params")
+-        
++
+         if os.path.exists(params_src):
+             if os.path.exists(params_dst):
+                 shutil.rmtree(params_dst)
+diff --git a/fix_dataset_meta.py b/fix_dataset_meta.py
+index 32acb79..9224d3b 100644
+--- a/fix_dataset_meta.py
++++ b/fix_dataset_meta.py
+@@ -3,73 +3,74 @@
+ Script to fix dataset metadata by changing 'action' to 'actions' in meta files.
+ """
+ 
+-import os
+ import json
+-import jsonlines
+-from pathlib import Path
++import os
++
+ 
+ def fix_dataset_meta(dataset_dir):
+     """Fix dataset metadata by changing 'action' to 'actions' in meta files."""
+-    meta_dir = os.path.join(dataset_dir, 'meta')
+-    
++    meta_dir = os.path.join(dataset_dir, "meta")
++
+     # Fix info.json
+-    info_path = os.path.join(meta_dir, 'info.json')
+-    with open(info_path, 'r') as f:
++    info_path = os.path.join(meta_dir, "info.json")
++    with open(info_path) as f:
+         info = json.load(f)
+-    
+-    if 'action' in info['features']:
+-        info['features']['actions'] = info['features'].pop('action')
+-        with open(info_path, 'w') as f:
++
++    if "action" in info["features"]:
++        info["features"]["actions"] = info["features"].pop("action")
++        with open(info_path, "w") as f:
+             json.dump(info, f, indent=2)
+         print(f"Fixed info.json in {dataset_dir}")
+-    
++
+     # Fix modality.json
+-    modality_path = os.path.join(meta_dir, 'modality.json')
+-    with open(modality_path, 'r') as f:
++    modality_path = os.path.join(meta_dir, "modality.json")
++    with open(modality_path) as f:
+         modality = json.load(f)
+-    
+-    if 'action' in modality:
+-        modality['actions'] = modality.pop('action')
+-        with open(modality_path, 'w') as f:
++
++    if "action" in modality:
++        modality["actions"] = modality.pop("action")
++        with open(modality_path, "w") as f:
+             json.dump(modality, f, indent=2)
+         print(f"Fixed modality.json in {dataset_dir}")
+-    
++
+     # Fix stats.json
+-    stats_path = os.path.join(meta_dir, 'stats.json')
+-    with open(stats_path, 'r') as f:
++    stats_path = os.path.join(meta_dir, "stats.json")
++    with open(stats_path) as f:
+         stats = json.load(f)
+-    
+-    if 'action' in stats:
+-        stats['actions'] = stats.pop('action')
+-        with open(stats_path, 'w') as f:
++
++    if "action" in stats:
++        stats["actions"] = stats.pop("action")
++        with open(stats_path, "w") as f:
+             json.dump(stats, f, indent=4)
+         print(f"Fixed stats.json in {dataset_dir}")
+-    
++
+     # Fix relative_stats.json
+-    relative_stats_path = os.path.join(meta_dir, 'relative_stats.json')
+-    with open(relative_stats_path, 'r') as f:
++    relative_stats_path = os.path.join(meta_dir, "relative_stats.json")
++    with open(relative_stats_path) as f:
+         relative_stats = json.load(f)
+-    
+-    if 'action' in relative_stats:
+-        relative_stats['actions'] = relative_stats.pop('action')
+-        with open(relative_stats_path, 'w') as f:
++
++    if "action" in relative_stats:
++        relative_stats["actions"] = relative_stats.pop("action")
++        with open(relative_stats_path, "w") as f:
+             json.dump(relative_stats, f, indent=4)
+         print(f"Fixed relative_stats.json in {dataset_dir}")
+ 
++
+ def main():
+     """Main function to fix all dataset metadata files."""
+     datasets = [
+-        '/data3/yinmenghao/code/openpi/data/assembly_bun_train',
+-        '/data3/yinmenghao/code/openpi/data/assembly_bun_val'
++        "/data3/yinmenghao/code/openpi/data/assembly_bun_train",
++        "/data3/yinmenghao/code/openpi/data/assembly_bun_val",
+     ]
+-    
++
+     for dataset in datasets:
+         if os.path.exists(dataset):
+             fix_dataset_meta(dataset)
+         else:
+             print(f"Dataset {dataset} does not exist, skipping...")
+-    
++
+     print("All datasets fixed successfully!")
+ 
++
+ if __name__ == "__main__":
+     main()
+diff --git a/fix_libero_policy.py b/fix_libero_policy.py
+index 82994b8..1f632fa 100644
+--- a/fix_libero_policy.py
++++ b/fix_libero_policy.py
+@@ -3,16 +3,15 @@
+ Script to fix libero_policy.py to handle None values in images.
+ """
+ 
+-import os
+ 
+ def fix_libero_policy():
+     """Fix libero_policy.py to handle None values in images."""
+     policy_file = "/data3/yinmenghao/code/openpi/src/openpi/policies/libero_policy.py"
+-    
++
+     # Read the current content of the file
+-    with open(policy_file, 'r') as f:
++    with open(policy_file) as f:
+         content = f.read()
+-    
++
+     # Replace the _parse_image function with a version that handles None values
+     old_parse_image = """def _parse_image(image) -> np.ndarray:
+     image = np.asarray(image)
+@@ -21,7 +20,7 @@ def fix_libero_policy():
+     if image.shape[0] == 3:
+         image = einops.rearrange(image, "c h w -> h w c")
+     return image"""
+-    
++
+     new_parse_image = """def _parse_image(image) -> np.ndarray:
+     if image is None:
+         # Return a dummy image if no image data is available
+@@ -32,20 +31,22 @@ def fix_libero_policy():
+     if image.shape[0] == 3:
+         image = einops.rearrange(image, "c h w -> h w c")
+     return image"""
+-    
++
+     # Replace the function in the content
+     fixed_content = content.replace(old_parse_image, new_parse_image)
+-    
++
+     # Write the fixed content back to the file
+-    with open(policy_file, 'w') as f:
++    with open(policy_file, "w") as f:
+         f.write(fixed_content)
+-    
++
+     print(f"Fixed {policy_file} to handle None values in images")
+ 
++
+ def main():
+     """Main function to fix libero_policy.py."""
+     fix_libero_policy()
+     print("Fix completed successfully!")
+ 
++
+ if __name__ == "__main__":
+     main()
+diff --git a/fix_parquet_columns.py b/fix_parquet_columns.py
+index 4a3487b..1ed423f 100644
+--- a/fix_parquet_columns.py
++++ b/fix_parquet_columns.py
+@@ -4,62 +4,66 @@ Script to fix parquet files by renaming columns.
+ """
+ 
+ import os
+-import pandas as pd
+ from pathlib import Path
++
++import pandas as pd
+ from tqdm import tqdm
+ 
++
+ def fix_parquet_columns(dataset_dir):
+     """Fix parquet files by renaming columns."""
+-    data_dir = os.path.join(dataset_dir, 'data')
+-    
++    data_dir = os.path.join(dataset_dir, "data")
++
+     # Get all parquet files
+-    parquet_files = list(Path(data_dir).glob('**/*.parquet'))
+-    
++    parquet_files = list(Path(data_dir).glob("**/*.parquet"))
++
+     if not parquet_files:
+         print(f"No parquet files found in {dataset_dir}, skipping...")
+         return
+-    
++
+     print(f"Found {len(parquet_files)} parquet files in {dataset_dir}")
+-    
++
+     # Iterate over all parquet files and rename columns
+     for file_path in tqdm(parquet_files, desc=f"Fixing parquet files in {dataset_dir}"):
+         # Read the parquet file
+         parquet_df = pd.read_parquet(file_path)
+-        
++
+         # Rename columns if they exist
+         rename_dict = {}
+-        if 'action' in parquet_df.columns:
+-            rename_dict['action'] = 'actions'
+-        if 'observation.state' in parquet_df.columns:
+-            rename_dict['observation.state'] = 'observation/state'
+-        if 'observation/image' not in parquet_df.columns:
++        if "action" in parquet_df.columns:
++            rename_dict["action"] = "actions"
++        if "observation.state" in parquet_df.columns:
++            rename_dict["observation.state"] = "observation/state"
++        if "observation/image" not in parquet_df.columns:
+             # Add empty image columns if they don't exist
+-            parquet_df['observation/image'] = None
+-            parquet_df['observation/wrist_image'] = None
+-        
++            parquet_df["observation/image"] = None
++            parquet_df["observation/wrist_image"] = None
++
+         if rename_dict:
+             # Rename the columns
+             parquet_df = parquet_df.rename(columns=rename_dict)
+-            
++
+             # Write the fixed parquet file back
+             parquet_df.to_parquet(file_path, index=False)
+-    
++
+     print(f"Fixed all parquet files in {dataset_dir}")
+ 
++
+ def main():
+     """Main function to fix all parquet files."""
+     datasets = [
+-        '/data3/yinmenghao/code/openpi/data/assembly_bun_train',
+-        '/data3/yinmenghao/code/openpi/data/assembly_bun_val'
++        "/data3/yinmenghao/code/openpi/data/assembly_bun_train",
++        "/data3/yinmenghao/code/openpi/data/assembly_bun_val",
+     ]
+-    
++
+     for dataset in datasets:
+         if os.path.exists(dataset):
+             fix_parquet_columns(dataset)
+         else:
+             print(f"Dataset {dataset} does not exist, skipping...")
+-    
++
+     print("All parquet files fixed successfully!")
+ 
++
+ if __name__ == "__main__":
+     main()
+diff --git a/scripts/train.py b/scripts/train.py
+index 9f5ce48..29dd5f3 100644
+--- a/scripts/train.py
++++ b/scripts/train.py
+@@ -102,7 +102,7 @@ def init_train_state(
+         params = nnx.state(model)
+         # Convert frozen params to bfloat16.
+         params = nnx_utils.state_map(params, config.freeze_filter, lambda p: p.replace(p.value.astype(jnp.bfloat16)))
+-        
++
+         # Note: We can't calculate trainable params during jax.eval_shape, so we'll do it later
+ 
+         return training_utils.TrainState(
+@@ -139,29 +139,28 @@ def init_train_state(
+         for k, v in params_dict.items():
+             if isinstance(v, dict):
+                 total += count_params(v, filter_func)
+-            else:
+-                # Check if this parameter should be counted
+-                if filter_func is None or filter_func(k):
+-                    total += v.size
++            # Check if this parameter should be counted
++            elif filter_func is None or filter_func(k):
++                total += v.size
+         return total
+ 
+     # Convert to pure dict for parameter counting
+     params_dict = train_state.params.to_pure_dict()
+-    
++
+     # Create a function to check if a parameter path should be filtered
+     def should_include_param(param_path):
+         """Check if a parameter should be included in trainable count."""
+         # This is a simplified check - in practice, we'd need to recreate the full filter logic
+         # For LoRA, we're only training LoRA parameters
+-        return 'lora' in param_path.lower()
+-    
++        return "lora" in param_path.lower()
++
+     # Count all parameters and trainable parameters
+     total_params = count_params(params_dict)
+     trainable_params = count_params(params_dict, should_include_param)
+-    
++
+     logging.info(f"\033[33mTotal parameters: {total_params / 1e6:.2f}M\033[0m")
+     logging.info(f"\033[33mTrainable parameters: {trainable_params / 1e6:.2f}M\033[0m")
+-    
++
+     return train_state, state_sharding
+ 
+ 
+diff --git a/src/openpi/training/config.py b/src/openpi/training/config.py
+index 4105043..64a64b9 100644
+--- a/src/openpi/training/config.py
++++ b/src/openpi/training/config.py
+@@ -797,8 +797,8 @@ _CONFIGS = [
+     TrainConfig(
+         name="pi05_assembly_bun_lora",
+         model=pi0_config.Pi0Config(
+-            pi05=True, 
+-            action_horizon=10, 
++            pi05=True,
++            action_horizon=10,
+             discrete_state_input=False,
+             paligemma_variant="gemma_2b_lora",  # 启用 Paligemma 的 LoRA
+             action_expert_variant="gemma_300m_lora",  # 启用 action expert 的 LoRA
+@@ -817,7 +817,9 @@ _CONFIGS = [
+         optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+         ema_decay=0.999,  # JAX支持EMA
+         # 使用JAX权重加载器
+-        weight_loader=weight_loaders.CheckpointWeightLoader("/data3/yinmenghao/code/openpi/local_model/pi05_base_lora/params"),
++        weight_loader=weight_loaders.CheckpointWeightLoader(
++            "/data3/yinmenghao/code/openpi/local_model/pi05_base_lora/params"
++        ),
+         num_train_steps=20000,  # 设置为20000训练步数
+         fsdp_devices=1,  # 使用1个GPU进行训练
+         freeze_filter=pi0_config.Pi0Config(
+@@ -826,13 +828,12 @@ _CONFIGS = [
+             action_expert_variant="gemma_300m_lora",
+         ).get_freeze_filter(),  # 冻结非 LoRA 参数, 只训练 LoRA 权重
+     ),
+-    
+     # Full parameter fine-tuning configuration (for PyTorch train_pytorch.py)
+     TrainConfig(
+         name="pi05_assembly_bun_full",
+         model=pi0_config.Pi0Config(
+-            pi05=True, 
+-            action_horizon=10, 
++            pi05=True,
++            action_horizon=10,
+             discrete_state_input=False,
+             paligemma_variant="gemma_2b",  # 使用常规变体进行全参量训练
+             action_expert_variant="gemma_300m",  # 使用常规变体进行全参量训练
+@@ -1060,7 +1061,6 @@ _CONFIGS = [
+         exp_name="debug_pi05",
+         wandb_enabled=False,
+     ),
+-
+     # RoboArena & PolaRiS configs.
+     *roboarena_config.get_roboarena_configs(),
+     *polaris_config.get_polaris_configs(),
+Error: Process completed with exit code 1.

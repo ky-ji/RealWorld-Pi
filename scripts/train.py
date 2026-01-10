@@ -102,7 +102,7 @@ def init_train_state(
         params = nnx.state(model)
         # Convert frozen params to bfloat16.
         params = nnx_utils.state_map(params, config.freeze_filter, lambda p: p.replace(p.value.astype(jnp.bfloat16)))
-        
+
         # Note: We can't calculate trainable params during jax.eval_shape, so we'll do it later
 
         return training_utils.TrainState(
@@ -139,29 +139,28 @@ def init_train_state(
         for k, v in params_dict.items():
             if isinstance(v, dict):
                 total += count_params(v, filter_func)
-            else:
-                # Check if this parameter should be counted
-                if filter_func is None or filter_func(k):
-                    total += v.size
+            # Check if this parameter should be counted
+            elif filter_func is None or filter_func(k):
+                total += v.size
         return total
 
     # Convert to pure dict for parameter counting
     params_dict = train_state.params.to_pure_dict()
-    
+
     # Create a function to check if a parameter path should be filtered
     def should_include_param(param_path):
         """Check if a parameter should be included in trainable count."""
         # This is a simplified check - in practice, we'd need to recreate the full filter logic
         # For LoRA, we're only training LoRA parameters
-        return 'lora' in param_path.lower()
-    
+        return "lora" in param_path.lower()
+
     # Count all parameters and trainable parameters
     total_params = count_params(params_dict)
     trainable_params = count_params(params_dict, should_include_param)
-    
+
     logging.info(f"\033[33mTotal parameters: {total_params / 1e6:.2f}M\033[0m")
     logging.info(f"\033[33mTrainable parameters: {trainable_params / 1e6:.2f}M\033[0m")
-    
+
     return train_state, state_sharding
 
 

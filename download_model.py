@@ -1,7 +1,8 @@
-from openpi.shared import download
-import shutil
 import os
 import pathlib
+import shutil
+
+from openpi.shared import download
 
 # 使用 maybe_download 函数下载模型
 checkpoint_dir = download.maybe_download("gs://openpi-assets/checkpoints/pi05_base")
@@ -17,12 +18,12 @@ print(f"正在将模型复制到: {local_model_dir}")
 # 检查 checkpoint_dir 中的文件和目录
 for item in os.listdir(checkpoint_dir):
     src_item = os.path.join(checkpoint_dir, item)
-    
+
     # 如果是 params.partial 目录, 复制其中的 params 子目录
     if item == "params.partial" and os.path.isdir(src_item):
         params_src = os.path.join(src_item, "params")
         params_dst = os.path.join(local_model_dir, "params")
-        
+
         if os.path.exists(params_src):
             if os.path.exists(params_dst):
                 shutil.rmtree(params_dst)
