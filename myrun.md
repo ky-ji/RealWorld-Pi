@@ -358,3 +358,170 @@ uv run scripts/serve_policy.py policy:checkpoint \
 7. **模型使用**：加载训练好的模型进行推理或部署策略服务器
 
 按照以上流程，即可完成 π₀.₅ 模型在自定义数据集上的微调训练。
+
+# JAX模型推理流程
+
+本文档总结了使用微调后的JAX模型进行推理的完整流程，包括策略服务器启动、推理脚本运行和结果可视化。
+
+## 1. 启动策略服务器
+
+使用微调后的JAX模型启动策略服务器：
+
+```bash
+cd /data3/yinmenghao/code/openpi
+source .venv/bin/activate
+python scripts/serve_policy.py policy:checkpoint --policy.config=pi05_assembly_bun_lora --policy.dir=checkpoints/pi05_assembly_bun_lora/assembly_bun_lora_finetune_0110/19999
+```
+
+服务器将在8000端口启动，等待推理请求。
+
+## 2. 运行推理脚本
+
+使用优化后的推理脚本对验证集进行推理：
+
+```bash
+cd /data3/yinmenghao/code/openpi/inference_with_jax
+source ../.venv/bin/activate
+python infer_assembly_bun.py
+```
+
+### 2.1 推理脚本参数
+
+推理脚本支持以下命令行参数：
+
+```bash
+python infer_assembly_bun.py --checkpoint-dir <checkpoint_path> --val-data-dir <val_data_path> --ws-url <websocket_url>
+```
+
+- `--checkpoint-dir`：checkpoint目录路径，默认为`/data3/yinmenghao/code/openpi/checkpoints/pi05_assembly_bun_lora/assembly_bun_lora_finetune_0110/19999`
+- `--val-data-dir`：验证数据目录路径，默认为`/data3/yinmenghao/code/openpi/data/assembly_bun_val/data/chunk-000`
+- `--ws-url`：策略服务器的WebSocket URL，默认为`ws://localhost:8000`
+
+### 2.2 推理结果保存
+
+推理脚本将：
+- 从checkpoint路径中提取信息，生成简化的checkpoint标识
+- 生成日期时间字符串（精确到分钟）
+- 构建包含checkpoint信息和日期时间的输出目录，格式为：
+  ```
+  openpi/inference_results/<checkpoint_id>_date_<YYYYMMDD_HHMM>
+  ```
+- 对验证集中的所有episode进行推理
+- 将推理结果保存到该输出目录下
+
+## 3. 分析推理结果
+
+使用分析脚本查看推理结果的统计信息：
+
+```bash
+cd /data3/yinmenghao/code/openpi/inference_with_jax
+source ../.venv/bin/activate
+python analyze_inference_results.py
+```
+
+**注意**：分析脚本需要修改以支持指定推理结果目录。目前它默认分析`inference_results/episode_000000_inference_results.json`文件。
+
+## 4. 可视化关节状态
+
+### 4.1 可视化所有episode
+
+使用优化后的可视化脚本生成所有episode的关节状态对比曲线图：
+
+```bash
+cd /data3/yinmenghao/code/openpi/inference_with_jax
+source ../.venv/bin/activate
+python visualize_joint_states.py --inference-results-dir <inference_results_dir>
+```
+
+其中`<inference_results_dir>`是推理脚本生成的输出目录，例如：
+
+```bash
+python visualize_joint_states.py --inference-results-dir /data3/yinmenghao/code/openpi/inference_results/pi05_assembly_bun_lora_19999_date_20260112_1646
+```
+
+### 4.2 可视化单个episode
+
+如果只需要可视化特定的episode：
+
+```bash
+python visualize_joint_states.py --inference-results-dir <inference_results_dir> --episode-idx 0
+```
+
+### 4.3 可视化脚本参数
+
+可视化脚本支持以下命令行参数：
+
+- `--inference-results-dir`：推理结果目录路径（必填）
+- `--val-data-dir`：验证数据目录路径，默认为`/data3/yinmenghao/code/openpi/data/assembly_bun_val/data/chunk-000`
+- `--episode-idx`：要可视化的episode索引（可选，默认可视化所有episode）
+
+### 4.4 可视化结果保存
+
+可视化脚本将：
+- 为每个关节生成对比曲线
+- 蓝色曲线表示真实关节状态
+- 红色虚线表示预测关节状态
+- 将图像保存到推理结果目录下，与推理结果文件放在一起
+
+## 5. 完整的推理和可视化流程
+
+### 5.1 步骤1：启动策略服务器
+
+```bash
+cd /data3/yinmenghao/code/openpi
+source .venv/bin/activate
+python scripts/serve_policy.py policy:checkpoint --policy.config=pi05_assembly_bun_lora --policy.dir=checkpoints/pi05_assembly_bun_lora/assembly_bun_lora_finetune_0110/19999
+```
+
+### 5.2 步骤2：运行推理脚本
+
+```bash
+cd /data3/yinmenghao/code/openpi/inference_with_jax
+source ../.venv/bin/activate
+python infer_assembly_bun.py
+```
+
+### 5.3 步骤3：获取推理结果目录
+
+推理脚本运行完成后，会输出推理结果目录路径，例如：
+
+```
+Inference completed. Results saved to: /data3/yinmenghao/code/openpi/inference_results/pi05_assembly_bun_lora_19999_date_20260112_1646
+```
+
+### 5.4 步骤4：运行可视化脚本
+
+使用步骤3中获得的推理结果目录路径，运行可视化脚本：
+
+```bash
+python visualize_joint_states.py --inference-results-dir /data3/yinmenghao/code/openpi/inference_results/pi05_assembly_bun_lora_19999_date_20260112_1646
+```
+
+## 6. 推理结果文件说明
+
+优化后的脚本将所有结果保存在同一个目录下：
+
+```
+<inference_results_dir>/
+├── all_inference_results.json       # 所有episode的推理结果
+├── episode_000000_inference_results.json  # 第0个episode的推理结果
+├── episode_000000_joint_states_comparison.png  # 第0个episode的关节状态对比图
+├── episode_000001_inference_results.json  # 第1个episode的推理结果
+├── episode_000001_joint_states_comparison.png  # 第1个episode的关节状态对比图
+└── ...  # 其他episode的结果文件
+```
+
+## 7. 重要文件路径
+
+- 微调模型路径：`checkpoints/pi05_assembly_bun_lora/assembly_bun_lora_finetune_0110/19999`
+- 验证集路径：`data/assembly_bun_val`
+- 推理脚本目录：`inference_with_jax/`
+- 推理结果目录：`inference_results/`
+
+## 8. 注意事项
+
+1. 确保策略服务器正在运行，然后再运行推理脚本
+2. 推理脚本和可视化脚本需要在虚拟环境中运行
+3. 可视化脚本需要安装matplotlib库
+4. 可以根据需要修改脚本中的参数，如checkpoint路径、验证数据路径等
+5. 推理结果目录包含了完整的推理结果和可视化图像，便于管理和比较不同checkpoint的推理效果

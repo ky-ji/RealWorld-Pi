@@ -182,6 +182,81 @@ class Unnormalize(DataTransformFn):
 
 
 @dataclasses.dataclass(frozen=True)
+class ColorJitterImages(DataTransformFn):
+    """Random color jitter for training-time image augmentation.
+
+    Semantics follow torchvision.transforms.ColorJitter:
+      brightness — factor sampled from [max(0, 1-b), 1+b]
+      contrast   — factor sampled from [max(0, 1-c), 1+c]
+      saturation — factor sampled from [max(0, 1-s), 1+s]
+      hue        — shift sampled from [-h, h], h ∈ [0, 0.5] (fraction of 360°)
+
+    Only images with a True entry in ``image_mask`` are augmented;
+    dummy / padding images are left untouched.
+    """
+
+    brightness: float = 0.0
+    contrast: float = 0.0
+    saturation: float = 0.0
+    hue: float = 0.0
+
+    def __call__(self, data: DataDict) -> DataDict:
+        if "image" not in data:
+            return data
+        image_mask = data.get("image_mask", {})
+        data["image"] = {
+            k: self._jitter(v) if bool(image_mask.get(k, np.True_)) else v
+            for k, v in data["image"].items()
+        }
+        return data
+
+    def _jitter(self, image: np.ndarray) -> np.ndarray:
+        from PIL import Image as PILImage
+        from PIL import ImageEnhance
+
+        was_uint8 = image.dtype == np.uint8
+        if not was_uint8:
+            image = np.clip(image * 255, 0, 255).astype(np.uint8)
+
+        pil_img = PILImage.fromarray(image)
+
+        ops: list[tuple[str, float]] = []
+        if self.brightness > 0:
+            ops.append(("brightness", self.brightness))
+        if self.contrast > 0:
+            ops.append(("contrast", self.contrast))
+        if self.saturation > 0:
+            ops.append(("saturation", self.saturation))
+        if self.hue > 0:
+            ops.append(("hue", self.hue))
+
+        np.random.shuffle(ops)
+
+        for name, val in ops:
+            if name == "brightness":
+                pil_img = ImageEnhance.Brightness(pil_img).enhance(
+                    np.random.uniform(max(0, 1 - val), 1 + val)
+                )
+            elif name == "contrast":
+                pil_img = ImageEnhance.Contrast(pil_img).enhance(
+                    np.random.uniform(max(0, 1 - val), 1 + val)
+                )
+            elif name == "saturation":
+                pil_img = ImageEnhance.Color(pil_img).enhance(
+                    np.random.uniform(max(0, 1 - val), 1 + val)
+                )
+            elif name == "hue":
+                hsv = np.array(pil_img.convert("HSV"), dtype=np.float32)
+                hsv[..., 0] = (hsv[..., 0] + np.random.uniform(-val, val) * 255.0) % 256.0
+                pil_img = PILImage.fromarray(hsv.astype(np.uint8), mode="HSV").convert("RGB")
+
+        result = np.asarray(pil_img)
+        if not was_uint8:
+            result = result.astype(np.float32) / 255.0
+        return result
+
+
+@dataclasses.dataclass(frozen=True)
 class ResizeImages(DataTransformFn):
     height: int
     width: int

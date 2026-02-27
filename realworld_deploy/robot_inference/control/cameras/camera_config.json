@@ -1,0 +1,26 @@
+{
+  "cameras": [
+    {
+      "name": "wrist_view",
+      "type": "realsense",
+      "serial_number": "141722075657",
+      "width": 1280,
+      "height": 720,
+      "fps": 30,
+      "enable_depth": true,
+      "enable_color": true,
+      "align_depth_to_color": true
+    },
+    {
+      "name": "front_view",
+      "type": "realsense",
+      "serial_number": "944622073019",
+      "width": 1280,
+      "height": 720,
+      "fps": 30,
+      "enable_depth": true,
+      "enable_color": true,
+      "align_depth_to_color": true
+    }
+  ]
+}

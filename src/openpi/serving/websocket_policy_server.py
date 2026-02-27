@@ -55,7 +55,8 @@ class WebsocketPolicyServer:
         while True:
             try:
                 start_time = time.monotonic()
-                obs = msgpack_numpy.unpackb(await websocket.recv())
+                # 添加strict_map_key=False确保字典键被解析为字符串而非bytes
+                obs = msgpack_numpy.unpackb(await websocket.recv(), strict_map_key=False)
 
                 infer_time = time.monotonic()
                 action = self._policy.infer(obs)

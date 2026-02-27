@@ -87,6 +87,182 @@ class LiberoInputs(transforms.DataTransformFn):
 
 
 @dataclasses.dataclass(frozen=True)
+class AssemblyBunOutputs(transforms.DataTransformFn):
+    """
+    Output transform for Assembly Bun dataset (8D actions).
+    """
+
+    def __call__(self, data: dict) -> dict:
+        # Return the first 8 actions (7 DOF + 1 Gripper)
+        return {"actions": np.asarray(data["actions"][:, :8])}
+
+
+@dataclasses.dataclass(frozen=True)
+class StackBowlsInputs(transforms.DataTransformFn):
+    """
+    Input transform for Stack Bowls dataset (7D actions, axis-angle rotation).
+
+    Expected input keys (set via RepackTransform during training, or sent directly during inference):
+        - observation/front_image: front camera RGB image
+        - observation/wrist_image: wrist camera RGB image
+        - observation/state: robot state [x, y, z, ax, ay, az, gripper]
+        - actions: (training only) action targets
+        - prompt: language instruction
+    """
+
+    model_type: _model.ModelType
+
+    def __call__(self, data: dict) -> dict:
+        # Parse images: LeRobot stores video frames as float32 (C,H,W), convert to uint8 (H,W,C).
+        front_image = _parse_image(data["observation/front_image"])
+        wrist_image = _parse_image(data["observation/wrist_image"])
+
+        inputs = {
+            "state": data["observation/state"],
+            "image": {
+                # Map to model's internal image slots:
+                # base_0_rgb = third-person / front camera
+                # left_wrist_0_rgb = wrist camera
+                # right_wrist_0_rgb = not used, padded with zeros
+                "base_0_rgb": front_image,
+                "left_wrist_0_rgb": wrist_image,
+                "right_wrist_0_rgb": np.zeros_like(front_image),
+            },
+            "image_mask": {
+                "base_0_rgb": np.True_,
+                "left_wrist_0_rgb": np.True_,
+                "right_wrist_0_rgb": np.True_ if self.model_type == _model.ModelType.PI0_FAST else np.False_,
+            },
+        }
+
+        if "actions" in data:
+            inputs["actions"] = data["actions"]
+
+        if "prompt" in data:
+            inputs["prompt"] = data["prompt"]
+
+        return inputs
+
+
+@dataclasses.dataclass(frozen=True)
+class StackBowlsOutputs(transforms.DataTransformFn):
+    """
+    Output transform for Stack Bowls dataset (7D actions).
+    Action format: [x, y, z, ax, ay, az, gripper] (axis-angle rotation).
+    """
+
+    def __call__(self, data: dict) -> dict:
+        # Return the first 7 actions (3 pos + 3 axis-angle + 1 gripper)
+        return {"actions": np.asarray(data["actions"][:, :7])}
+
+
+@dataclasses.dataclass(frozen=True)
+class AssemblyThingsInputs(transforms.DataTransformFn):
+    """
+    Input transform for Assembly Things multi-task dataset (7D actions, axis-angle rotation).
+
+    Same camera/action format as StackBowlsInputs:
+        - observation/front_image: front camera RGB image
+        - observation/wrist_image: wrist camera RGB image
+        - observation/state: robot state [x, y, z, ax, ay, az, gripper]
+        - actions: (training only) action targets
+        - prompt: language instruction (varies per task)
+    """
+
+    model_type: _model.ModelType
+
+    def __call__(self, data: dict) -> dict:
+        front_image = _parse_image(data["observation/front_image"])
+        wrist_image = _parse_image(data["observation/wrist_image"])
+
+        inputs = {
+            "state": data["observation/state"],
+            "image": {
+                "base_0_rgb": front_image,
+                "left_wrist_0_rgb": wrist_image,
+                "right_wrist_0_rgb": np.zeros_like(front_image),
+            },
+            "image_mask": {
+                "base_0_rgb": np.True_,
+                "left_wrist_0_rgb": np.True_,
+                "right_wrist_0_rgb": np.True_ if self.model_type == _model.ModelType.PI0_FAST else np.False_,
+            },
+        }
+
+        if "actions" in data:
+            inputs["actions"] = data["actions"]
+
+        if "prompt" in data:
+            inputs["prompt"] = data["prompt"]
+
+        return inputs
+
+
+@dataclasses.dataclass(frozen=True)
+class AssemblyThingsOutputs(transforms.DataTransformFn):
+    """
+    Output transform for Assembly Things multi-task dataset (7D actions).
+    Action format: [x, y, z, ax, ay, az, gripper] (axis-angle rotation).
+    """
+
+    def __call__(self, data: dict) -> dict:
+        return {"actions": np.asarray(data["actions"][:, :7])}
+
+
+@dataclasses.dataclass(frozen=True)
+class PlacePhoneInputs(transforms.DataTransformFn):
+    """
+    Input transform for Place Phone dataset (7D actions, axis-angle rotation).
+
+    Same camera/action format as StackBowlsInputs:
+        - observation/front_image: front camera RGB image
+        - observation/wrist_image: wrist camera RGB image
+        - observation/state: robot state [x, y, z, ax, ay, az, gripper]
+        - actions: (training only) action targets
+        - prompt: language instruction
+    """
+
+    model_type: _model.ModelType
+
+    def __call__(self, data: dict) -> dict:
+        front_image = _parse_image(data["observation/front_image"])
+        wrist_image = _parse_image(data["observation/wrist_image"])
+
+        inputs = {
+            "state": data["observation/state"],
+            "image": {
+                "base_0_rgb": front_image,
+                "left_wrist_0_rgb": wrist_image,
+                "right_wrist_0_rgb": np.zeros_like(front_image),
+            },
+            "image_mask": {
+                "base_0_rgb": np.True_,
+                "left_wrist_0_rgb": np.True_,
+                "right_wrist_0_rgb": np.True_ if self.model_type == _model.ModelType.PI0_FAST else np.False_,
+            },
+        }
+
+        if "actions" in data:
+            inputs["actions"] = data["actions"]
+
+        if "prompt" in data:
+            inputs["prompt"] = data["prompt"]
+
+        return inputs
+
+
+@dataclasses.dataclass(frozen=True)
+class PlacePhoneOutputs(transforms.DataTransformFn):
+    """
+    Output transform for Place Phone dataset (7D actions).
+    Action format: [x, y, z, ax, ay, az, gripper] (axis-angle rotation).
+    """
+
+    def __call__(self, data: dict) -> dict:
+        return {"actions": np.asarray(data["actions"][:, :7])}
+
+
+@dataclasses.dataclass(frozen=True)
 class LiberoOutputs(transforms.DataTransformFn):
     """
     This class is used to convert outputs from the model back the the dataset specific format. It is

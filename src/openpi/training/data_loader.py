@@ -137,9 +137,18 @@ def create_torch_dataset(
     if repo_id == "fake":
         return FakeDataset(model_config, num_samples=1024)
 
-    # Check if repo_id is a local path
-    local_data_path = f"/data3/yinmenghao/code/openpi/data/{repo_id}"
-    if os.path.exists(local_data_path):
+    # Check if repo_id is a local path -- try multiple base directories
+    local_data_path = None
+    for base_dir in [
+        "/data3/yinmenghao/code/openpi/data",
+        "/data1/vla-data/processed/PI/data",
+    ]:
+        candidate = os.path.join(base_dir, repo_id)
+        if os.path.exists(candidate):
+            local_data_path = candidate
+            break
+
+    if local_data_path is not None:
         # Use local dataset
         dataset_meta = lerobot_dataset.LeRobotDatasetMetadata(repo_id, root=local_data_path, force_cache_sync=False)
         dataset = lerobot_dataset.LeRobotDataset(
@@ -186,8 +195,19 @@ def create_rlds_dataset(
     )
 
 
-def transform_dataset(dataset: Dataset, data_config: _config.DataConfig, *, skip_norm_stats: bool = False) -> Dataset:
-    """Transform the dataset by applying the data transforms."""
+def transform_dataset(
+    dataset: Dataset,
+    data_config: _config.DataConfig,
+    *,
+    skip_norm_stats: bool = False,
+    extra_transforms: Sequence[_transforms.DataTransformFn] = (),
+) -> Dataset:
+    """Transform the dataset by applying the data transforms.
+
+    Args:
+        extra_transforms: Additional transforms inserted between data_transforms and
+            normalization (e.g. image augmentation during training).
+    """
     norm_stats = {}
     if data_config.repo_id != "fake" and not skip_norm_stats:
         if data_config.norm_stats is None:
@@ -202,6 +222,7 @@ def transform_dataset(dataset: Dataset, data_config: _config.DataConfig, *, skip
         [
             *data_config.repack_transforms.inputs,
             *data_config.data_transforms.inputs,
+            *extra_transforms,
             _transforms.Normalize(norm_stats, use_quantiles=data_config.use_quantile_norm),
             *data_config.model_transforms.inputs,
         ],
@@ -259,6 +280,23 @@ def create_data_loader(
     data_config = config.data.create(config.assets_dirs, config.model)
     logging.info(f"data_config: {data_config}")
 
+    # Build training-time image augmentation transforms.
+    extra_transforms: list[_transforms.DataTransformFn] = []
+    if config.image_augment.enabled:
+        aug = config.image_augment
+        extra_transforms.append(
+            _transforms.ColorJitterImages(
+                brightness=aug.brightness,
+                contrast=aug.contrast,
+                saturation=aug.saturation,
+                hue=aug.hue,
+            )
+        )
+        logging.info(
+            f"Image augmentation enabled: brightness={aug.brightness}, contrast={aug.contrast}, "
+            f"saturation={aug.saturation}, hue={aug.hue}"
+        )
+
     if data_config.rlds_data_dir is not None:
         return create_rlds_data_loader(
             data_config,
@@ -282,6 +320,7 @@ def create_data_loader(
         seed=config.seed,
         skip_norm_stats=skip_norm_stats,
         framework=framework,
+        extra_transforms=extra_transforms,
     )
 
 
@@ -298,6 +337,7 @@ def create_torch_data_loader(
     num_workers: int = 0,
     seed: int = 0,
     framework: str = "jax",
+    extra_transforms: Sequence[_transforms.DataTransformFn] = (),
 ) -> DataLoader[tuple[_model.Observation, _model.Actions]]:
     """Create a data loader for training.
 
@@ -315,9 +355,10 @@ def create_torch_data_loader(
         num_workers: The number of worker processes to use. If zero, the data loader will
             execute in the main process.
         seed: The seed to use for shuffling the data.
+        extra_transforms: Additional transforms (e.g. image augmentation).
     """
     dataset = create_torch_dataset(data_config, action_horizon, model_config)
-    dataset = transform_dataset(dataset, data_config, skip_norm_stats=skip_norm_stats)
+    dataset = transform_dataset(dataset, data_config, skip_norm_stats=skip_norm_stats, extra_transforms=extra_transforms)
 
     # Use TorchDataLoader for both frameworks
     # For PyTorch DDP, create DistributedSampler and divide batch size by world size

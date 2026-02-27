@@ -329,8 +329,12 @@ def train_loop(config: _config.TrainConfig):
         else:
             raise FileNotFoundError(f"Experiment checkpoint directory {exp_checkpoint_dir} does not exist for resume")
     elif config.overwrite and config.checkpoint_dir.exists():
-        shutil.rmtree(config.checkpoint_dir)
-        logging.info(f"Overwriting checkpoint directory: {config.checkpoint_dir}")
+        try:
+            shutil.rmtree(config.checkpoint_dir)
+            logging.info(f"Overwriting checkpoint directory: {config.checkpoint_dir}")
+        except FileNotFoundError:
+            # Directory might have been removed by another process in multi-GPU setup
+            logging.info(f"Checkpoint directory already removed: {config.checkpoint_dir}")
 
     # Create checkpoint directory with experiment name
     if not resuming:

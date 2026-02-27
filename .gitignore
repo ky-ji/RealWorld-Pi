@@ -1,5 +1,10 @@
 # --- 修复后的核心过滤规则 ---
 checkpoints/
+aaa_input2output/
+debug_eval_outputs_openpi/
+realtime-vla/
+realworld_deploy/server/log/
+vlalab_runs/
 data/
 local_model/
 local_transformers/

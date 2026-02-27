@@ -73,6 +73,27 @@ class PaliGemmaWeightLoader(WeightLoader):
         return _merge_params(loaded_params, params, missing_regex=".*")
 
 
+def _try_truncate_weight(loaded: np.ndarray, expected_shape: tuple) -> np.ndarray | None:
+    """Try to truncate a loaded weight to match the expected shape.
+
+    For each dimension, if expected <= loaded, slice the first `expected` elements.
+    This preserves pre-trained features for overlapping dimensions (e.g., when action_dim
+    changes from 32 to 7, the first 7 dims' projections are reused).
+
+    Returns the truncated array, or None if truncation is not possible (i.e., any expected
+    dimension is larger than the loaded dimension).
+    """
+    if len(loaded.shape) != len(expected_shape):
+        return None
+    # Check that every expected dim is <= the loaded dim (can only shrink, not grow).
+    for ld, ed in zip(loaded.shape, expected_shape):
+        if ed > ld:
+            return None
+    # Build slicing tuple: take first `expected` elements along each axis.
+    slices = tuple(slice(0, ed) for ed in expected_shape)
+    return loaded[slices]
+
+
 def _merge_params(loaded_params: at.Params, params: at.Params, *, missing_regex: str) -> at.Params:
     """Merges the loaded parameters with the reference parameters.
 
@@ -88,10 +109,29 @@ def _merge_params(loaded_params: at.Params, params: at.Params, *, missing_regex:
     flat_loaded = flax.traverse_util.flatten_dict(loaded_params, sep="/")
 
     # First, take all weights that are a subset of the reference weights.
+    # When shapes mismatch (e.g., action_dim changed from 32 to 7), try to truncate the
+    # loaded weight to reuse pre-trained features for the overlapping dimensions.
+    # This is better than random init since position/rotation projections are preserved.
     result = {}
     for k, v in flat_loaded.items():
         if k in flat_ref:
-            result[k] = v.astype(flat_ref[k].dtype) if v.dtype != flat_ref[k].dtype else v
+            ref = flat_ref[k]
+            if hasattr(v, "shape") and hasattr(ref, "shape") and v.shape != ref.shape:
+                truncated = _try_truncate_weight(v, ref.shape)
+                if truncated is not None:
+                    logger.warning(
+                        f"Truncating weight '{k}': {v.shape} -> {ref.shape} "
+                        "(reusing pre-trained features for overlapping dimensions)."
+                    )
+                    result[k] = truncated.astype(ref.dtype) if truncated.dtype != ref.dtype else truncated
+                else:
+                    logger.warning(
+                        f"Skipping weight '{k}': shape mismatch (loaded={v.shape}, expected={ref.shape}), "
+                        "cannot truncate. This layer will be randomly initialized."
+                    )
+                    result[k] = ref  # keep reference (ShapeDtypeStruct) for tree structure
+                continue
+            result[k] = v.astype(ref.dtype) if v.dtype != ref.dtype else v
 
     flat_loaded.clear()
 

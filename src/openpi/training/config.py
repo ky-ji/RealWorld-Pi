@@ -479,7 +479,7 @@ class LeRobotAssemblyBunDataConfig(DataConfigFactory):
         # The data transforms are applied to the data coming from the dataset *and* during inference.
         data_transforms = _transforms.Group(
             inputs=[libero_policy.LiberoInputs(model_type=model_config.model_type)],
-            outputs=[libero_policy.LiberoOutputs()],
+            outputs=[libero_policy.AssemblyBunOutputs()],
         )
 
         # Model transforms include things like tokenizing the prompt and action targets
@@ -492,6 +492,172 @@ class LeRobotAssemblyBunDataConfig(DataConfigFactory):
             data_transforms=data_transforms,
             model_transforms=model_transforms,
         )
+
+
+@dataclasses.dataclass(frozen=True)
+class LeRobotStackBowlsDataConfig(DataConfigFactory):
+    """
+    Data config for stack_bowls dataset in LeRobot format.
+    Action space: 7D [x, y, z, ax, ay, az, gripper] (axis-angle rotation).
+    Raw actions are absolute targets -> converted to delta actions during training.
+    """
+
+    @override
+    def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
+        # Repack transform: map dataset keys to the format expected by StackBowlsInputs.
+        # Dataset video features: front_view, wrist_view  (LeRobot decodes video frames automatically)
+        # Dataset parquet columns: state, actions
+        # StackBowlsInputs expects: observation/front_image, observation/wrist_image, observation/state
+        repack_transform = _transforms.Group(
+            inputs=[
+                _transforms.RepackTransform(
+                    {
+                        "observation/front_image": "front_view",
+                        "observation/wrist_image": "wrist_view",
+                        "observation/state": "state",
+                        "actions": "actions",
+                        "prompt": "prompt",
+                    }
+                )
+            ]
+        )
+
+        # Data transforms applied during training and inference.
+        data_transforms = _transforms.Group(
+            inputs=[libero_policy.StackBowlsInputs(model_type=model_config.model_type)],
+            outputs=[libero_policy.StackBowlsOutputs()],
+        )
+
+        # Convert absolute actions to delta actions for training.
+        # First 6 dims (XYZ + axis-angle) use delta, last dim (gripper) stays absolute.
+        delta_action_mask = _transforms.make_bool_mask(6, -1)
+        data_transforms = data_transforms.push(
+            inputs=[_transforms.DeltaActions(delta_action_mask)],
+            outputs=[_transforms.AbsoluteActions(delta_action_mask)],
+        )
+
+        # Model transforms (tokenization, padding, etc.)
+        model_transforms = ModelTransformFactory()(model_config)
+
+        return dataclasses.replace(
+            self.create_base_config(assets_dirs, model_config),
+            repack_transforms=repack_transform,
+            data_transforms=data_transforms,
+            model_transforms=model_transforms,
+        )
+
+
+@dataclasses.dataclass(frozen=True)
+class LeRobotAssemblyThingsDataConfig(DataConfigFactory):
+    """
+    Data config for assembly_things multi-task dataset in LeRobot format.
+    Multiple tasks with different prompts (e.g., stack bowls, place phone, insert pen).
+    Action space: 7D [x, y, z, ax, ay, az, gripper] (axis-angle rotation).
+    Raw actions are absolute targets -> converted to delta actions during training.
+    """
+
+    @override
+    def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
+        repack_transform = _transforms.Group(
+            inputs=[
+                _transforms.RepackTransform(
+                    {
+                        "observation/front_image": "front_view",
+                        "observation/wrist_image": "wrist_view",
+                        "observation/state": "state",
+                        "actions": "actions",
+                        "prompt": "prompt",
+                    }
+                )
+            ]
+        )
+
+        data_transforms = _transforms.Group(
+            inputs=[libero_policy.AssemblyThingsInputs(model_type=model_config.model_type)],
+            outputs=[libero_policy.AssemblyThingsOutputs()],
+        )
+
+        # Convert absolute actions to delta actions for training.
+        # First 6 dims (XYZ + axis-angle) use delta, last dim (gripper) stays absolute.
+        delta_action_mask = _transforms.make_bool_mask(6, -1)
+        data_transforms = data_transforms.push(
+            inputs=[_transforms.DeltaActions(delta_action_mask)],
+            outputs=[_transforms.AbsoluteActions(delta_action_mask)],
+        )
+
+        model_transforms = ModelTransformFactory()(model_config)
+
+        return dataclasses.replace(
+            self.create_base_config(assets_dirs, model_config),
+            repack_transforms=repack_transform,
+            data_transforms=data_transforms,
+            model_transforms=model_transforms,
+        )
+
+
+@dataclasses.dataclass(frozen=True)
+class LeRobotPlacePhoneDataConfig(DataConfigFactory):
+    """
+    Data config for place_phone dataset in LeRobot format.
+    Action space: 7D [x, y, z, ax, ay, az, gripper] (axis-angle rotation).
+    Raw actions are absolute targets -> converted to delta actions during training.
+    """
+
+    @override
+    def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
+        repack_transform = _transforms.Group(
+            inputs=[
+                _transforms.RepackTransform(
+                    {
+                        "observation/front_image": "front_view",
+                        "observation/wrist_image": "wrist_view",
+                        "observation/state": "state",
+                        "actions": "actions",
+                        "prompt": "prompt",
+                    }
+                )
+            ]
+        )
+
+        data_transforms = _transforms.Group(
+            inputs=[libero_policy.PlacePhoneInputs(model_type=model_config.model_type)],
+            outputs=[libero_policy.PlacePhoneOutputs()],
+        )
+
+        # Convert absolute actions to delta actions for training.
+        # First 6 dims (XYZ + axis-angle) use delta, last dim (gripper) stays absolute.
+        delta_action_mask = _transforms.make_bool_mask(6, -1)
+        data_transforms = data_transforms.push(
+            inputs=[_transforms.DeltaActions(delta_action_mask)],
+            outputs=[_transforms.AbsoluteActions(delta_action_mask)],
+        )
+
+        model_transforms = ModelTransformFactory()(model_config)
+
+        return dataclasses.replace(
+            self.create_base_config(assets_dirs, model_config),
+            repack_transforms=repack_transform,
+            data_transforms=data_transforms,
+            model_transforms=model_transforms,
+        )
+
+
+@dataclasses.dataclass(frozen=True)
+class ImageAugmentConfig:
+    """Training-time image augmentation (ColorJitter). Disabled by default.
+
+    Parameters follow torchvision.transforms.ColorJitter / GR00T conventions:
+      brightness — max jitter factor, sampled from [max(0, 1-b), 1+b]
+      contrast   — max jitter factor, sampled from [max(0, 1-c), 1+c]
+      saturation — max jitter factor, sampled from [max(0, 1-s), 1+s]
+      hue        — max shift in [-h, h] (fraction of 360°, ∈ [0, 0.5])
+    """
+
+    enabled: bool = False
+    brightness: float = 0.3
+    contrast: float = 0.4
+    saturation: float = 0.5
+    hue: float = 0.08
 
 
 @dataclasses.dataclass(frozen=True)
@@ -547,7 +713,10 @@ class TrainConfig:
     # How often (in steps) to save checkpoints.
     save_interval: int = 2000
     # If set, any existing checkpoints matching step % keep_period == 0 will not be deleted.
-    keep_period: int | None = 5000
+    keep_period: int | None = None
+    # Maximum number of checkpoints to keep. When exceeded, the oldest checkpoint is deleted.
+    # Set to None to keep all checkpoints (subject to keep_period policy).
+    max_checkpoints: int | None = None
 
     # If true, will overwrite the checkpoint directory if it already exists.
     overwrite: bool = False
@@ -556,6 +725,9 @@ class TrainConfig:
 
     # If true, will enable wandb logging.
     wandb_enabled: bool = True
+
+    # Image augmentation config (ColorJitter). Only applied during training.
+    image_augment: ImageAugmentConfig = dataclasses.field(default_factory=ImageAugmentConfig)
 
     # Used to pass metadata to the policy server.
     policy_metadata: dict[str, Any] | None = None
@@ -803,7 +975,7 @@ _CONFIGS = [
             paligemma_variant="gemma_2b_lora",  # 启用 Paligemma 的 LoRA
             action_expert_variant="gemma_300m_lora",  # 启用 action expert 的 LoRA
         ),
-        data=LeRobotAssemblyBunDataConfig(
+        data=LeRobotAssemblyBunDataConfig(                  
             repo_id="assembly_bun_train",
             base_config=DataConfig(prompt_from_task=True),
         ),
@@ -854,12 +1026,183 @@ _CONFIGS = [
         # 使用PyTorch权重路径
         pytorch_weight_path="/data3/yinmenghao/code/openpi/local_model/pi05_base_full",
         num_train_steps=20000,  # 设置为20000训练步数
-        fsdp_devices=6,  # 使用6个GPU进行训练
+        fsdp_devices=8,  # 使用6个GPU进行训练
+        freeze_filter=None,  # 全参量训练, 不需要冻结过滤器
+    ),
+    TrainConfig(
+        name="pi05_assembly_chocolate_full",
+        model=pi0_config.Pi0Config(
+            pi05=True,
+            action_horizon=10,
+            discrete_state_input=False,
+            paligemma_variant="gemma_2b",  # 使用常规变体进行全参量训练
+            action_expert_variant="gemma_300m",  # 使用常规变体进行全参量训练
+        ),
+        data=LeRobotAssemblyBunDataConfig(
+            repo_id="raw_assembly_chocolate_0109/train",
+            base_config=DataConfig(prompt_from_task=True),
+        ),
+        batch_size=256,  # 批次大小, 适合PyTorch全参量训练(全局批次大小，需要/显卡数量得到每张卡的batch_size)
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1000,  # 预热步数
+            peak_lr=5e-5,  # 学习率
+            decay_steps=20000,  # 与训练步数匹配
+            decay_lr=5e-6,
+        ),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=None,  # PyTorch 不支持 EMA
+        # 使用PyTorch权重路径
+        pytorch_weight_path="/data3/yinmenghao/code/openpi/local_model/pi05_base_full",
+        num_train_steps=20000,  # 设置为20000训练步数
+        fsdp_devices=8,  # 使用8个GPU进行训练
         freeze_filter=None,  # 全参量训练, 不需要冻结过滤器
     ),
     #
-    # Fine-tuning Aloha configs.
+    # ── Stack Bowls configs (7D action: XYZ + axis-angle + gripper) ──
     #
+    # LoRA fine-tuning (JAX, single GPU)
+    TrainConfig(
+        name="pi05_stack_bowls_lora",
+        model=pi0_config.Pi0Config(
+            pi05=True,
+            action_dim=7,  # 7D: pos(3) + axis-angle(3) + gripper(1)
+            action_horizon=10,
+            discrete_state_input=False,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+        ),
+        data=LeRobotStackBowlsDataConfig(
+            repo_id="010_stack_bowls_0209",
+            base_config=DataConfig(prompt_from_task=True),
+        ),
+        num_workers=32,  # 充分利用多核 CPU 加速视频解码
+        batch_size=16,
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1000,
+            peak_lr=5e-5,
+            decay_steps=20000,
+            decay_lr=5e-6,
+        ),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader(
+            "/data3/yinmenghao/code/openpi/local_model/pi05_base_lora/params"
+        ),
+        num_train_steps=20000,
+        fsdp_devices=1,
+        freeze_filter=pi0_config.Pi0Config(
+            pi05=True,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+        ).get_freeze_filter(),
+    ),
+    # Full parameter fine-tuning (PyTorch, multi-GPU)
+    TrainConfig(
+        name="pi05_stack_bowls_full",
+        model=pi0_config.Pi0Config(
+            pi05=True,
+            action_dim=7,  # 7D: pos(3) + axis-angle(3) + gripper(1)
+            action_horizon=10,
+            discrete_state_input=False,
+            paligemma_variant="gemma_2b",
+            action_expert_variant="gemma_300m",
+        ),
+        data=LeRobotStackBowlsDataConfig(
+            repo_id="010_stack_bowls_0209",
+            base_config=DataConfig(prompt_from_task=True),
+        ),
+        batch_size=128,
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1000,
+            peak_lr=5e-5,
+            decay_steps=20000,
+            decay_lr=5e-6,
+        ),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=None,
+        pytorch_weight_path="/data3/yinmenghao/code/openpi/local_model/pi05_base_full",
+        num_train_steps=20000,
+        fsdp_devices=8,
+        freeze_filter=None,
+    ),
+    # ── Place Phone: single-task LoRA fine-tuning ──
+    # Dataset: 009_place_phone
+    TrainConfig(
+        name="pi05_place_phone_lora",
+        model=pi0_config.Pi0Config(
+            pi05=True,
+            action_dim=7,  # 7D: pos(3) + axis-angle(3) + gripper(1)
+            action_horizon=10,
+            discrete_state_input=False,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+        ),
+        data=LeRobotPlacePhoneDataConfig(
+            repo_id="009_place_phone",
+            base_config=DataConfig(prompt_from_task=True),
+        ),
+        num_workers=32,
+        batch_size=32,
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1000,
+            peak_lr=5e-5,
+            decay_steps=20000,
+            decay_lr=5e-6,
+        ),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader(
+            "/data3/yinmenghao/code/openpi/local_model/pi05_base_lora/params"
+        ),
+        num_train_steps=20000,
+        fsdp_devices=1,
+        freeze_filter=pi0_config.Pi0Config(
+            pi05=True,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+        ).get_freeze_filter(),
+    ),
+    # ── Assembly Things: multi-task LoRA fine-tuning ──
+    # Dataset: 001_assembly_things_0209 (3 tasks, 6 directories)
+    # Tasks: each episode has its own prompt via prompt_from_task=True
+    TrainConfig(
+        name="pi05_assembly_things_lora",
+        model=pi0_config.Pi0Config(
+            pi05=True,
+            action_dim=7,  # 7D: pos(3) + axis-angle(3) + gripper(1)
+            action_horizon=10,
+            discrete_state_input=False,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+        ),
+        data=LeRobotAssemblyThingsDataConfig(
+            repo_id="001_assembly_things_0209",
+            base_config=DataConfig(prompt_from_task=True),
+        ),
+        num_workers=32,
+        batch_size=32,
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1000,
+            peak_lr=5e-5,
+            decay_steps=20000,
+            decay_lr=5e-6,
+        ),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader(
+            "/data3/yinmenghao/code/openpi/local_model/pi05_base_lora/params"
+        ),
+        num_train_steps=20000,
+        fsdp_devices=1,
+        freeze_filter=pi0_config.Pi0Config(
+            pi05=True,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+        ).get_freeze_filter(),
+    ),
+    #
+    # Fine-tuning Aloha configs.
+    #,
     # This is a test config that is used to illustate how train on a custom LeRobot dataset.
     # For instructions on how to convert and train on your own Aloha dataset see examples/aloha_real/README.md
     TrainConfig(

@@ -1,0 +1,16 @@
+1.定位到原本推理异常点，如step24时的最后一帧突然推理出了0值（打开）但是又在下一个step内推理出了1值（闭合），
+对下一帧重新推理，使用手动修改后的输入state，判断输入state没有被上一帧判断影响时，模型的推理值是否正常。
+
+      "input": {
+        "state7_axisangle": [
+          0.7595005035400391,
+          -0.035072967410087585,
+          0.24080152809619904,
+          3.027040958404541,
+          -1.2862008810043335,
+          0.5994580984115601,
+          1.0
+        ],
+        "prompt": "Place the phone on a stand",
+        front_view:/home/yinmenghao/code/openpi/vlalab_runs/openpi_pi05_15000/run_20260226_135534/artifacts/images/step_000024_front_view.jpg
+        wrist_view:/home/yinmenghao/code/openpi/vlalab_runs/openpi_pi05_15000/run_20260226_135534/artifacts/images/step_000024_wrist_view.jpg
