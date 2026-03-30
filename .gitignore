@@ -9,6 +9,7 @@ data/
 local_model/
 local_transformers/
 third_party/
+realworld_deploy/server/time_recordings/*.json
 wandb/
 assets/
 *.log

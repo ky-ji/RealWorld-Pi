@@ -26,7 +26,7 @@ OpenPI Pi0.5 推理服务器
 
 使用示例（需要使用 openpi 仓库的 uv 虚拟环境）：
   # 使用默认配置启动
-  CUDA_VISIBLE_DEVICES=3 /home/yinmenghao/code/openpi/.venv/bin/python \
+  CUDA_VISIBLE_DEVICES=4 /home/yinmenghao/code/openpi/.venv/bin/python \
       /home/yinmenghao/code/openpi/realworld_deploy/server/inference_server_openpi_pi05.py
 
   # 或使用 uv run 启动
@@ -307,6 +307,14 @@ class OpenPiPi05InferenceServer:
         self.vlalab_run = None
         self._current_images_b64 = {}  # 用于暂存当前步骤参与推理的图像
 
+        # 时间记录文件夹
+        self.time_recordings_dir = Path(__file__).parent / "time_recordings"
+        self.time_recordings_dir.mkdir(parents=True, exist_ok=True)
+        self.inference_count = 0  # 推理计数
+        self.time_records = []  # 存储所有推理记录
+        # 生成唯一的文件名（启动时生成）
+        self.time_record_filename = f"time_recordings_{datetime.now().strftime('%m%d_%H%M')}.json"
+
         if VLALAB_AVAILABLE:
             ckpt_name = Path(checkpoint_dir).name[:20]
             # vlalab_runs 目录创建在 openpi 根目录下
@@ -508,6 +516,7 @@ class OpenPiPi05InferenceServer:
 
             server_socket.close()
             self._save_inference_log()
+            self._save_all_time_records()
 
         except Exception as e:
             print(f"[OpenPI Pi0.5 推理服务器] 启动失败: {e}")
@@ -836,6 +845,18 @@ class OpenPiPi05InferenceServer:
 
                 send_timestamp = time.time()
 
+                # 计算推理时间差（从接收到观测到下发指令）
+                inference_duration_ms = (send_timestamp - recv_timestamp) * 1000
+
+                # 保存时间记录到 JSON 文件
+                self._save_time_recording(
+                    recv_timestamp=recv_timestamp,
+                    send_timestamp=send_timestamp,
+                    inference_duration_ms=inference_duration_ms,
+                    task_prompt=self.task_prompt,
+                    step_count=self.episode_step_count
+                )
+
                 if self.verbose:
                     inference_time = (infer_end_time - infer_start_time) * 1000
                     total_time = (send_timestamp - process_start_time) * 1000
@@ -908,6 +929,76 @@ class OpenPiPi05InferenceServer:
                 vlalab.finish()
         except Exception as e:
             print(f"[错误] 保存日志失败: {e}")
+
+    def _save_time_recording(
+        self,
+        recv_timestamp: float,
+        send_timestamp: float,
+        inference_duration_ms: float,
+        task_prompt: str,
+        step_count: int
+    ):
+        """
+        记录单次推理的时间信息（追加到列表，服务器关闭时统一保存）
+
+        Args:
+            recv_timestamp: 接收观测信息的时间戳
+            send_timestamp: 发送指令的时间戳
+            inference_duration_ms: 推理消耗时间（毫秒）
+            task_prompt: 任务指令
+            step_count: 当前 episode 的步数
+        """
+        try:
+            self.inference_count += 1
+
+            # 构建记录数据
+            record = {
+                "inference_id": self.inference_count,
+                "timestamp": {
+                    "receive_observation": float(recv_timestamp),
+                    "send_command": float(send_timestamp),
+                    "receive_observation_iso": datetime.fromtimestamp(recv_timestamp).isoformat(),
+                    "send_command_iso": datetime.fromtimestamp(send_timestamp).isoformat(),
+                },
+                "inference_duration_ms": float(inference_duration_ms),
+                "task_prompt": task_prompt,
+                "episode_step": step_count,
+            }
+
+            # 追加到记录列表
+            self.time_records.append(record)
+
+        except Exception as e:
+            print(f"[错误] 记录时间失败: {e}")
+
+    def _save_all_time_records(self):
+        """保存所有时间记录到 JSON 文件"""
+        try:
+            if not self.time_records:
+                print("[时间记录] 无记录可保存")
+                return
+
+            filepath = self.time_recordings_dir / self.time_record_filename
+
+            # 提取所有 inference_duration_ms
+            durations = [r["inference_duration_ms"] for r in self.time_records]
+
+            # 构建完整的 JSON 数据
+            full_record = {
+                "inference_records": self.time_records,
+                "summary": {
+                    "inference_duration_ms": durations
+                }
+            }
+
+            # 保存到 JSON 文件
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(full_record, f, indent=2, ensure_ascii=False)
+
+            print(f"[时间记录] 已保存: {filepath.name}, 共 {len(self.time_records)} 条记录")
+
+        except Exception as e:
+            print(f"[错误] 保存时间记录失败: {e}")
 
 
 if __name__ == "__main__":

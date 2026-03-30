@@ -22,14 +22,14 @@ SERVER_PORT = 8007                 # 推理服务器端口（与 dexbotic 版本
 # 模型配置 (OpenPI)
 # =============================================================================
 # OpenPI 训练配置名称（对应 src/openpi/training/config.py 中的 TrainConfig.name）
-#CONFIG_NAME = "pi05_stack_bowls_lora"
+CONFIG_NAME = "pi05_stack_bowls_lora"
 #CONFIG_NAME = "pi05_assembly_things_lora" 
-CONFIG_NAME = "pi05_place_phone_lora"
+#CONFIG_NAME = "pi05_place_phone_lora"
 
 # OpenPI checkpoint 目录（包含 params/, train_state/, assets/ 等）
 #CHECKPOINT_DIR = "/home/yinmenghao/code/openpi/checkpoints/assembly_things_lora_0209/pi05_assembly_things_lora/assembly_things_lora_v1/14999"
-#CHECKPOINT_DIR = "/home/yinmenghao/code/openpi/checkpoints/stack_bowls_lora_0208/pi05_stack_bowls_lora/stack_bowls_lora_v2/29999"
-CHECKPOINT_DIR = "/home/yinmenghao/code/openpi/checkpoints/place_phone_lora_0211/pi05_place_phone_lora/place_phone_lora_v2/19999"
+CHECKPOINT_DIR = "/home/yinmenghao/code/openpi/checkpoints/stack_bowls_lora_0208/pi05_stack_bowls_lora/stack_bowls_lora_v2/29999"
+#CHECKPOINT_DIR = "/home/yinmenghao/code/openpi/checkpoints/place_phone_lora_0211/pi05_place_phone_lora/place_phone_lora_v2/19999"
 # 推理设备（用于 PyTorch 模型加载，JAX 模型自动选择）
 DEVICE = "cuda"
 
@@ -39,8 +39,8 @@ DEVICE = "cuda"
 #chocolate
 #TASK_PROMPT = "move the chocolate from the conveyor belt to the center of the plate"
 #TASK_PROMPT = "Insert the pen into the pen holder"
-#TASK_PROMPT = "Stack three bowls together"
-TASK_PROMPT = "Place the phone on a stand"
+TASK_PROMPT = "Stack three bowls together"
+#TASK_PROMPT = "Place the phone on a stand"
 
 # 模型输入参数
 NUM_IMAGES = 2                     # Pi0.5 使用 Front View + Wrist View
