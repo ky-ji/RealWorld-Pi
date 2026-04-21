@@ -100,7 +100,11 @@ class Policy(BasePolicy):
             if hasattr(model, "sample_actions_realtime"):
                 self._sample_actions_realtime = nnx_utils.module_jit(
                     model.sample_actions_realtime,
-                    static_argnames=("prefix_attention_schedule",),
+                    static_argnames=(
+                        "inference_delay",
+                        "prefix_attention_horizon",
+                        "prefix_attention_schedule",
+                    ),
                 )
             else:
                 self._sample_actions_realtime = None
