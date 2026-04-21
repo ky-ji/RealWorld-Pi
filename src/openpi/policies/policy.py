@@ -21,6 +21,30 @@ from openpi.shared import nnx_utils
 BasePolicy: TypeAlias = _base_policy.BasePolicy
 
 
+def _split_transforms(
+    transforms: Sequence[_transforms.DataTransformFn],
+    split_type: type[_transforms.DataTransformFn],
+) -> tuple[_transforms.DataTransformFn, _transforms.DataTransformFn, _transforms.DataTransformFn]:
+    before: list[_transforms.DataTransformFn] = []
+    after: list[_transforms.DataTransformFn] = []
+    split_transform: _transforms.DataTransformFn | None = None
+    seen_split = False
+    for transform in transforms:
+        if split_transform is None and isinstance(transform, split_type):
+            split_transform = transform
+            seen_split = True
+            continue
+        if seen_split:
+            after.append(transform)
+        else:
+            before.append(transform)
+    return (
+        _transforms.compose(before),
+        split_transform or _transforms.compose(()),
+        _transforms.compose(after),
+    )
+
+
 class Policy(BasePolicy):
     def __init__(
         self,
@@ -50,6 +74,16 @@ class Policy(BasePolicy):
         self._model = model
         self._input_transform = _transforms.compose(transforms)
         self._output_transform = _transforms.compose(output_transforms)
+        (
+            self._pre_normalize_input_transform,
+            self._normalize_input_transform,
+            self._post_normalize_input_transform,
+        ) = _split_transforms(transforms, _transforms.Normalize)
+        (
+            self._pre_unnormalize_output_transform,
+            self._unnormalize_output_transform,
+            self._post_unnormalize_output_transform,
+        ) = _split_transforms(output_transforms, _transforms.Unnormalize)
         self._sample_kwargs = sample_kwargs or {}
         self._metadata = metadata or {}
         self._is_pytorch_model = is_pytorch
@@ -59,16 +93,22 @@ class Policy(BasePolicy):
             self._model = self._model.to(pytorch_device)
             self._model.eval()
             self._sample_actions = model.sample_actions
+            self._sample_actions_realtime = None
         else:
             # JAX model setup
             self._sample_actions = nnx_utils.module_jit(model.sample_actions)
+            if hasattr(model, "sample_actions_realtime"):
+                self._sample_actions_realtime = nnx_utils.module_jit(
+                    model.sample_actions_realtime,
+                    static_argnames=("prefix_attention_schedule",),
+                )
+            else:
+                self._sample_actions_realtime = None
             self._rng = rng or jax.random.key(0)
 
     @override
     def infer(self, obs: dict, *, noise: np.ndarray | None = None) -> dict:  # type: ignore[misc]
-        # Make a copy since transformations may modify the inputs in place.
-        inputs = jax.tree.map(lambda x: x, obs)
-        inputs = self._input_transform(inputs)
+        inputs = self._prepare_model_inputs(obs)
         if not self._is_pytorch_model:
             # Make a batch and convert to jax.Array.
             inputs = jax.tree.map(lambda x: jnp.asarray(x)[np.newaxis, ...], inputs)
@@ -99,10 +139,81 @@ class Policy(BasePolicy):
         else:
             outputs = jax.tree.map(lambda x: np.asarray(x[0, ...]), outputs)
 
-        outputs = self._output_transform(outputs)
+        outputs = self._apply_output_transforms(outputs)
         outputs["policy_timing"] = {
             "infer_ms": model_time * 1000,
         }
+        return outputs
+
+    def infer_realtime_chunking(
+        self,
+        obs: dict,
+        *,
+        prefix_actions: np.ndarray,
+        inference_delay: int,
+        prefix_attention_horizon: int,
+        prefix_attention_schedule: str = "exp",
+        max_guidance_weight: float = 5.0,
+        noise: np.ndarray | None = None,
+    ) -> dict:
+        if self._is_pytorch_model:
+            raise NotImplementedError("RTC is currently only supported for JAX checkpoints; PyTorch checkpoints are unsupported.")
+        if self._sample_actions_realtime is None:
+            raise NotImplementedError("RTC is unsupported because the loaded model does not expose sample_actions_realtime().")
+
+        inputs = jax.tree.map(lambda x: x, obs)
+        inputs = self._pre_normalize_input_transform(inputs)
+        inputs["actions"] = np.asarray(prefix_actions, dtype=np.float32)
+        inputs = self._normalize_input_transform(inputs)
+        inputs = self._post_normalize_input_transform(inputs)
+        normalized_prefix_actions = np.asarray(inputs.pop("actions"), dtype=np.float32)
+        inputs = jax.tree.map(lambda x: jnp.asarray(x)[np.newaxis, ...], inputs)
+        prefix_actions_jax = jnp.asarray(normalized_prefix_actions)
+        if prefix_actions_jax.ndim == 2:
+            prefix_actions_jax = prefix_actions_jax[None, ...]
+
+        sample_kwargs = dict(self._sample_kwargs)
+        if noise is not None:
+            noise = jnp.asarray(noise)
+            if noise.ndim == 2:
+                noise = noise[None, ...]
+            sample_kwargs["noise"] = noise
+
+        observation = _model.Observation.from_dict(inputs)
+        self._rng, sample_rng = jax.random.split(self._rng)
+        start_time = time.monotonic()
+        outputs = {
+            "state": inputs["state"],
+            "actions": self._sample_actions_realtime(
+                sample_rng,
+                observation,
+                prefix_actions=prefix_actions_jax,
+                inference_delay=int(inference_delay),
+                prefix_attention_horizon=int(prefix_attention_horizon),
+                prefix_attention_schedule=str(prefix_attention_schedule),
+                max_guidance_weight=float(max_guidance_weight),
+                **sample_kwargs,
+            ),
+        }
+        model_time = time.monotonic() - start_time
+        outputs = jax.tree.map(lambda x: np.asarray(x[0, ...]), outputs)
+        outputs = self._apply_output_transforms(outputs)
+        outputs["policy_timing"] = {
+            "infer_ms": model_time * 1000,
+        }
+        return outputs
+
+    def _prepare_model_inputs(self, obs: dict) -> dict:
+        inputs = jax.tree.map(lambda x: x, obs)
+        inputs = self._pre_normalize_input_transform(inputs)
+        inputs = self._normalize_input_transform(inputs)
+        inputs = self._post_normalize_input_transform(inputs)
+        return inputs
+
+    def _apply_output_transforms(self, outputs: dict) -> dict:
+        outputs = self._pre_unnormalize_output_transform(outputs)
+        outputs = self._unnormalize_output_transform(outputs)
+        outputs = self._post_unnormalize_output_transform(outputs)
         return outputs
 
     @property

@@ -62,11 +62,13 @@ ACTION_DIM = 7                     # 动作维度：[x, y, z, ax, ay, az, grippe
 # 推理配置
 # =============================================================================
 INFERENCE_FREQ = 10.0              # 推理频率 (Hz)
-EXECUTION_MODE = os.environ.get("OPENPI_EXECUTION_MODE", "naive_async")
+EXECUTION_MODE = os.environ.get("OPENPI_EXECUTION_MODE", "rtc")
 EXECUTE_HORIZON = int(os.environ.get("OPENPI_EXECUTE_HORIZON", "4"))
 DELAY_ESTIMATE_ALPHA = float(os.environ.get("OPENPI_DELAY_ESTIMATE_ALPHA", "0.5"))
 DELAY_ESTIMATE_INIT_STEPS = int(os.environ.get("OPENPI_DELAY_ESTIMATE_INIT_STEPS", "2"))
 MAX_DEADLINE_OVERRUN_STEPS = int(os.environ.get("OPENPI_MAX_DEADLINE_OVERRUN_STEPS", "2"))
+RTC_PREFIX_ATTENTION_SCHEDULE = os.environ.get("OPENPI_RTC_PREFIX_ATTENTION_SCHEDULE", "exp")
+RTC_MAX_GUIDANCE_WEIGHT = float(os.environ.get("OPENPI_RTC_MAX_GUIDANCE_WEIGHT", "5.0"))
 
 # Chunk 和推理参数
 # 注意：OpenPI 的 action_horizon 在训练 config 中设为 10，即模型输出 (10, 7) 的 action chunk

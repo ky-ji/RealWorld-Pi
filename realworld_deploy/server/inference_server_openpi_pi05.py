@@ -53,7 +53,11 @@ from server_config_openpi_pi05 import (  # noqa: E402
     ACTION_DIM,
     TASK_PROMPT,
     INFERENCE_FREQ,
+    EXECUTION_MODE,
+    EXECUTE_HORIZON,
     TARGET_CHUNK_SIZE,
+    RTC_PREFIX_ATTENTION_SCHEDULE,
+    RTC_MAX_GUIDANCE_WEIGHT,
     ACTION_AMPLIFY_POS,
     ACTION_AMPLIFY_ROT,
     ENABLE_ACTION_LIMIT,
@@ -208,6 +212,8 @@ class OpenPiPi05InferenceServer:
         self.device = device
         self.task_prompt = task_prompt
         self.inference_freq = float(inference_freq)
+        self.execution_mode = str(EXECUTION_MODE)
+        self.execute_horizon = int(EXECUTE_HORIZON)
         self.server_ip = server_ip
         self.server_port = int(server_port)
         self.observation_port = int(observation_port)
@@ -218,6 +224,8 @@ class OpenPiPi05InferenceServer:
         self.num_images = int(NUM_IMAGES)
         self.action_dim = int(ACTION_DIM)
         self.target_chunk_size = int(TARGET_CHUNK_SIZE)
+        self.rtc_prefix_attention_schedule = str(RTC_PREFIX_ATTENTION_SCHEDULE)
+        self.rtc_max_guidance_weight = float(RTC_MAX_GUIDANCE_WEIGHT)
         self.action_amplify_pos = float(ACTION_AMPLIFY_POS)
         self.action_amplify_rot = float(ACTION_AMPLIFY_ROT)
         self.enable_action_limit = bool(ENABLE_ACTION_LIMIT)
@@ -261,11 +269,15 @@ class OpenPiPi05InferenceServer:
                 "config_name": config_name,
                 "checkpoint_dir": str(checkpoint_dir),
                 "model_type": "openpi_pi05",
+                "execution_mode": self.execution_mode,
+                "execute_horizon": self.execute_horizon,
                 "action_format": "7D_axis_angle",
                 "quaternion_order": "XYZW",
                 "transport": "zmq_binary_dual_socket",
                 "observation_port": self.observation_port,
                 "action_port": self.action_port,
+                "rtc_prefix_attention_schedule": self.rtc_prefix_attention_schedule,
+                "rtc_max_guidance_weight": self.rtc_max_guidance_weight,
                 "clock_offset_ns": int(self.clock_offset_ns),
                 "start_time": time.strftime("%Y-%m-%d %H:%M:%S"),
             },
@@ -511,6 +523,90 @@ class OpenPiPi05InferenceServer:
         self.prev_action_chunk = action.copy()
         return action
 
+    def _normalize_chunk_with_hold_last(self, chunk: np.ndarray, *, expected_dim: int) -> np.ndarray:
+        chunk = np.asarray(chunk, dtype=np.float32)
+        if chunk.ndim == 1:
+            chunk = chunk.reshape(1, -1)
+        if chunk.ndim != 2 or chunk.shape[1] != expected_dim:
+            raise ValueError(f"expected chunk shape [T, {expected_dim}], got {chunk.shape}")
+        if len(chunk) >= self.target_chunk_size:
+            return chunk[: self.target_chunk_size].copy()
+        pad = np.repeat(chunk[-1:, :], self.target_chunk_size - len(chunk), axis=0)
+        return np.concatenate([chunk, pad], axis=0)
+
+    def _prepare_rtc_prefix_actions(
+        self,
+        rtc_action_prefix,
+        current_state7_aa: np.ndarray,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        prefix_pose_chunk = self._normalize_chunk_with_hold_last(np.asarray(rtc_action_prefix, dtype=np.float32), expected_dim=8)
+        prefix_states_abs = []
+        prev_quat = axisangle_to_quaternion_xyzw(current_state7_aa[3:6])
+        prev_axisangle = current_state7_aa[3:6].copy()
+        for pose8 in prefix_pose_chunk:
+            state7 = pose8_xyzw_to_state7_axisangle(
+                pose8,
+                verbose=False,
+                prev_quat_xyzw=prev_quat,
+                prev_axisangle=prev_axisangle,
+            )
+            prefix_states_abs.append(state7)
+            prev_quat = canonicalize_quaternion_xyzw(pose8[3:7], prev_quat_xyzw=prev_quat)
+            prev_axisangle = state7[3:6].copy()
+
+        prefix_states_abs = np.asarray(prefix_states_abs, dtype=np.float32)
+        prefix_states_delta = prefix_states_abs.copy()
+        prefix_states_delta[:, :6] -= current_state7_aa[:6]
+        return prefix_states_abs, prefix_states_delta
+
+    def _extract_rtc_request(
+        self,
+        data: dict,
+        current_state7_aa: np.ndarray,
+    ) -> Tuple[Optional[Dict], Optional[str]]:
+        if self.execution_mode != "rtc":
+            return None, None
+
+        rtc_metadata = data.get("rtc_metadata")
+        rtc_action_prefix = data.get("rtc_action_prefix")
+        if rtc_metadata is None or rtc_action_prefix is None:
+            return None, "missing_rtc_metadata_or_prefix"
+        if not isinstance(rtc_metadata, dict):
+            return None, "invalid_rtc_metadata_type"
+
+        try:
+            cycle_id = int(rtc_metadata["cycle_id"])
+            execute_horizon = int(rtc_metadata["execute_horizon"])
+            delay_estimate_steps = int(rtc_metadata["delay_estimate_steps"])
+        except Exception as exc:
+            return None, f"invalid_rtc_metadata_fields:{exc}"
+
+        if execute_horizon != self.execute_horizon:
+            return None, f"execute_horizon_mismatch:{execute_horizon}!={self.execute_horizon}"
+        if delay_estimate_steps < 0 or delay_estimate_steps > self.target_chunk_size:
+            return None, f"delay_estimate_out_of_range:{delay_estimate_steps}"
+
+        prefix_attention_horizon = self.target_chunk_size - self.execute_horizon
+        if prefix_attention_horizon < 0 or prefix_attention_horizon > self.target_chunk_size:
+            return None, f"invalid_prefix_attention_horizon:{prefix_attention_horizon}"
+
+        try:
+            prefix_states_abs, prefix_states_delta = self._prepare_rtc_prefix_actions(
+                rtc_action_prefix,
+                current_state7_aa,
+            )
+        except Exception as exc:
+            return None, f"invalid_rtc_prefix:{exc}"
+
+        return {
+            "cycle_id": cycle_id,
+            "execute_horizon": execute_horizon,
+            "delay_estimate_steps": delay_estimate_steps,
+            "prefix_attention_horizon": prefix_attention_horizon,
+            "prefix_actions_absolute": prefix_states_abs,
+            "prefix_actions_delta": prefix_states_delta,
+        }, None
+
     def start(self):
         try:
             self.zmq_context = zmq.Context()
@@ -735,8 +831,27 @@ class OpenPiPi05InferenceServer:
             if "wrist_view" in images_for_model:
                 obs["observation/wrist_image"] = images_for_model["wrist_view"]
 
+            rtc_request, rtc_fallback_reason = self._extract_rtc_request(data, state7_aa)
+            rtc_mode = "disabled"
+            if self.execution_mode == "rtc":
+                if rtc_request is not None:
+                    rtc_mode = "rtc"
+                else:
+                    rtc_mode = "rtc_fallback"
+                    print(f"[OpenPI Pi0.5 推理服务器] RTC fallback -> naive_async: {rtc_fallback_reason}")
+
             infer_start_timestamp_ns = time.time_ns()
-            result = self.policy.infer(obs)
+            if rtc_request is not None:
+                result = self.policy.infer_realtime_chunking(
+                    obs,
+                    prefix_actions=rtc_request["prefix_actions_delta"],
+                    inference_delay=rtc_request["delay_estimate_steps"],
+                    prefix_attention_horizon=rtc_request["prefix_attention_horizon"],
+                    prefix_attention_schedule=self.rtc_prefix_attention_schedule,
+                    max_guidance_weight=self.rtc_max_guidance_weight,
+                )
+            else:
+                result = self.policy.infer(obs)
             infer_end_timestamp_ns = time.time_ns()
 
             new_chunk_7d = np.asarray(result["actions"], dtype=np.float32).copy()
@@ -965,6 +1080,20 @@ class OpenPiPi05InferenceServer:
                     "action7_axisangle_model": new_chunk_7d.tolist(),
                     "action7_axisangle_sent": execute_chunk_7d_raw.tolist(),
                     "action8_xyzw_sent": action_chunk_8d.tolist(),
+                },
+                "rtc": {
+                    "mode": rtc_mode,
+                    "fallback_reason": rtc_fallback_reason,
+                    "request": None
+                    if rtc_request is None
+                    else {
+                        "cycle_id": int(rtc_request["cycle_id"]),
+                        "execute_horizon": int(rtc_request["execute_horizon"]),
+                        "delay_estimate_steps": int(rtc_request["delay_estimate_steps"]),
+                        "prefix_attention_horizon": int(rtc_request["prefix_attention_horizon"]),
+                        "prefix_actions_absolute": rtc_request["prefix_actions_absolute"].tolist(),
+                        "prefix_actions_delta": rtc_request["prefix_actions_delta"].tolist(),
+                    },
                 },
             }
             if missing_image_keys:

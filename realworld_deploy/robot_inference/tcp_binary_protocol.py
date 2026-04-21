@@ -1,5 +1,6 @@
 import base64
 from decimal import Decimal, InvalidOperation
+import json
 import os
 import socket
 import struct
@@ -396,6 +397,8 @@ def prepare_observation_message(
         obs_capture_timestamp_ns = int(time.time_ns())
     acked_chunk_id = data.get("client_last_chunk_id")
     acked_chunk_recv_timestamp_ns = data.get("client_last_chunk_recv_timestamp_ns")
+    rtc_metadata = data.get("rtc_metadata")
+    rtc_action_prefix = data.get("rtc_action_prefix")
     flags = proto.FLAG_NONE
     if acked_chunk_id is None or acked_chunk_recv_timestamp_ns is None:
         acked_chunk_id_value = -1
@@ -404,6 +407,24 @@ def prepare_observation_message(
         flags |= proto.FLAG_ACK_VALID
         acked_chunk_id_value = int(acked_chunk_id)
         acked_chunk_recv_timestamp_value = int(acked_chunk_recv_timestamp_ns)
+    rtc_metadata_frame = None
+    rtc_prefix_frame = None
+    if rtc_action_prefix is not None:
+        rtc_prefix_array = np.asarray(rtc_action_prefix, dtype=np.float32)
+        if rtc_prefix_array.ndim == 1:
+            rtc_prefix_array = rtc_prefix_array.reshape(1, -1)
+        if rtc_metadata is None:
+            rtc_metadata = {}
+        rtc_metadata = dict(rtc_metadata)
+        rtc_metadata["prefix_steps"] = int(rtc_prefix_array.shape[0])
+        rtc_metadata["prefix_action_dim"] = int(rtc_prefix_array.shape[1])
+        rtc_prefix_frame = _as_protocol_array(rtc_prefix_array, PROTOCOL_FLOAT32_DTYPE).tobytes()
+        flags |= proto.FLAG_RTC_PREFIX_VALID
+    if rtc_metadata is not None:
+        rtc_metadata_frame = json.dumps(rtc_metadata).encode("utf-8")
+        flags |= proto.FLAG_RTC_METADATA_VALID
+    if rtc_metadata_frame is not None or rtc_prefix_frame is not None:
+        flags |= proto.FLAG_MORE_FRAMES
     header = proto.OBSERVATION_HEADER.pack(
         proto.PROTOCOL_VERSION,
         flags,
@@ -420,6 +441,10 @@ def prepare_observation_message(
     )
     frames = [proto.MSG_OBSERVATION, header, _as_protocol_array(state8, PROTOCOL_FLOAT32_DTYPE).tobytes()]
     frames.extend(image_frames)
+    if rtc_metadata_frame is not None:
+        frames.append(rtc_metadata_frame)
+    if rtc_prefix_frame is not None:
+        frames.append(rtc_prefix_frame)
     payload, frame_offsets = _pack_frames_mutable(frames)
     header_offset = frame_offsets[proto.OBS_FRAME_HEADER_INDEX]
     timestamp_offset = header_offset + OBSERVATION_HEADER_CLIENT_SEND_TIMESTAMP_OFFSET
@@ -546,13 +571,39 @@ def decode_message(frames: Sequence[bytes], camera_names: Optional[Sequence[str]
         header = dict(zip(proto.OBSERVATION_HEADER_FIELDS, header_values))
         state8 = np.frombuffer(frames[proto.OBS_FRAME_STATE_INDEX], dtype=PROTOCOL_FLOAT32_DTYPE).reshape(proto.STATE_DIM).astype(np.float32, copy=True)
         inferred_camera_names = list(camera_names) if camera_names is not None else camera_names_from_ids(proto.DEFAULT_CAMERA_ORDER)
-        image_frames = frames[proto.OBS_FRAME_FIRST_IMAGE_INDEX:]
+        num_images = int(header["num_images"])
+        image_end_index = proto.OBS_FRAME_FIRST_IMAGE_INDEX + num_images
+        image_frames = frames[proto.OBS_FRAME_FIRST_IMAGE_INDEX:image_end_index]
         images = OrderedDict()
         for index, image_bytes in enumerate(image_frames):
             camera_name = inferred_camera_names[index] if index < len(inferred_camera_names) else f"camera_{index}"
             images[camera_name] = bytes(image_bytes)
+        extra_frames = list(frames[image_end_index:])
         acked_chunk_id = int(header["acked_chunk_id"])
         acked_chunk_recv_timestamp_ns = int(header["acked_chunk_recv_timestamp_ns"])
+        flags = int(header["flags"])
+        rtc_metadata = None
+        rtc_action_prefix = None
+        if (flags & proto.FLAG_RTC_METADATA_VALID) != 0:
+            if not extra_frames:
+                raise ValueError("rtc metadata flag set without metadata frame")
+            rtc_metadata = json.loads(extra_frames.pop(0).decode("utf-8"))
+        if (flags & proto.FLAG_RTC_PREFIX_VALID) != 0:
+            if rtc_metadata is None:
+                raise ValueError("rtc prefix requires rtc metadata")
+            if not extra_frames:
+                raise ValueError("rtc prefix flag set without prefix frame")
+            prefix_steps = int(rtc_metadata.get("prefix_steps", 0))
+            prefix_action_dim = int(rtc_metadata.get("prefix_action_dim", 0))
+            if prefix_steps <= 0 or prefix_action_dim <= 0:
+                raise ValueError(f"invalid rtc prefix shape metadata: steps={prefix_steps}, action_dim={prefix_action_dim}")
+            prefix_array = np.frombuffer(extra_frames.pop(0), dtype=PROTOCOL_FLOAT32_DTYPE)
+            expected_count = prefix_steps * prefix_action_dim
+            if prefix_array.size != expected_count:
+                raise ValueError(
+                    f"rtc prefix payload size mismatch: expected {expected_count} float32 values, got {prefix_array.size}"
+                )
+            rtc_action_prefix = prefix_array.reshape(prefix_steps, prefix_action_dim).astype(np.float32, copy=True)
         return {
             "type": "observation",
             "session_id": int(header["session_id"]),
@@ -566,6 +617,8 @@ def decode_message(frames: Sequence[bytes], camera_names: Optional[Sequence[str]
             "client_last_chunk_id": None if acked_chunk_id < 0 else acked_chunk_id,
             "client_last_chunk_recv_timestamp_ns": None if acked_chunk_recv_timestamp_ns <= 0 else acked_chunk_recv_timestamp_ns,
             "state8": state8.tolist(),
+            "rtc_metadata": rtc_metadata,
+            "rtc_action_prefix": None if rtc_action_prefix is None else rtc_action_prefix.tolist(),
             "_header": header,
         }
     if msg_type == proto.MSG_ACTION:

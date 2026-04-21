@@ -42,7 +42,7 @@ ENABLE_DEPTH = True          # 是否启用深度（仅 RealSense 相机）
 
 # ==================== 推理配置 ====================
 INFERENCE_FREQ = 10.0        # 推理频率 (Hz)
-EXECUTION_MODE = "naive_async"
+EXECUTION_MODE = "rtc"
 EXECUTE_HORIZON = 4
 DELAY_ESTIMATE_ALPHA = 0.5
 DELAY_ESTIMATE_INIT_STEPS = 2

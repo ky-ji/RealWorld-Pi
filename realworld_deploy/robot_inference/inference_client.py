@@ -914,6 +914,9 @@ class PolymetisInferenceClient:
             'scheduler': [],
         }
 
+    def _uses_async_execution(self) -> bool:
+        return self.execution_mode in ('naive_async', 'rtc')
+
     def _reset_remote_episode(self) -> bool:
         self.client.configure_protocol(self.protocol_session_id, self.camera_names)
         if not self.client.send_data({'type': 'reset'}):
@@ -999,7 +1002,7 @@ class PolymetisInferenceClient:
             self.control_thread = Thread(target=self._control_loop, daemon=True)
             self.control_thread.start()
 
-            if self.execution_mode != 'naive_async':
+            if not self._uses_async_execution():
                 self.arrival_monitor_thread = Thread(target=self._arrival_monitor_loop, daemon=True)
                 self.arrival_monitor_thread.start()
             
@@ -1179,7 +1182,13 @@ class PolymetisInferenceClient:
                 break
             self.action_response_event.wait(timeout=min(0.01, remaining))
 
-    def _send_observation_request(self, aligned_obs: Dict, *, cycle_id: int) -> Optional[Dict]:
+    def _send_observation_request(
+        self,
+        aligned_obs: Dict,
+        *,
+        cycle_id: int,
+        scheduler: Optional[AsyncActionChunkScheduler] = None,
+    ) -> Optional[Dict]:
         last_pose = aligned_obs['pose']
         last_gripper = aligned_obs['gripper']
         observation_log_entry = {
@@ -1211,6 +1220,14 @@ class PolymetisInferenceClient:
         if pending_chunk_receipt_ack is not None:
             obs_msg['client_last_chunk_id'] = int(pending_chunk_receipt_ack['chunk_id'])
             obs_msg['client_last_chunk_recv_timestamp_ns'] = int(pending_chunk_receipt_ack['client_chunk_recv_timestamp_ns'])
+        if self.execution_mode == 'rtc' and scheduler is not None and scheduler.has_chunk:
+            delay_estimate_steps = scheduler.rounded_delay_estimate_steps
+            obs_msg['rtc_metadata'] = {
+                'cycle_id': int(cycle_id),
+                'execute_horizon': int(self.execute_horizon),
+                'delay_estimate_steps': int(0 if delay_estimate_steps is None else max(0, delay_estimate_steps)),
+            }
+            obs_msg['rtc_action_prefix'] = scheduler.current_chunk()
 
         obs_prepare_end_ns = time.time_ns()
         obs_seq = self.client.peek_next_obs_seq() if hasattr(self.client, 'peek_next_obs_seq') else self.observations_sent
@@ -1240,7 +1257,7 @@ class PolymetisInferenceClient:
         self.observations_sent += 1
         print(
             f"[客户端][Async] 发送观测 #{self.observations_sent} "
-            f"(obs_seq={int(obs_seq)}, cycle={int(cycle_id)})"
+            f"(obs_seq={int(obs_seq)}, cycle={int(cycle_id)}, mode={self.execution_mode})"
         )
         return {
             'obs_seq': int(obs_seq),
@@ -1393,7 +1410,7 @@ class PolymetisInferenceClient:
         print(f"[客户端] 推理循环已启动")
         print(f"  基础频率: {self.inference_freq:.1f}Hz (dt={self.inference_interval:.3f}s)")
         print(
-            f"  调度模式: naive_async, execute_horizon={self.execute_horizon}, "
+            f"  调度模式: {self.execution_mode}, execute_horizon={self.execute_horizon}, "
             f"delay_alpha={self.delay_estimate_alpha}, init_steps={self.delay_estimate_init_steps}"
         )
         print("[客户端] 等待观测缓冲区填充...")
@@ -1459,7 +1476,11 @@ class PolymetisInferenceClient:
                 cycle_id = scheduler.executed_steps // self.execute_horizon
                 aligned_obs = self.obs_buffer.get_aligned_obs()
                 if aligned_obs is not None:
-                    request_info = self._send_observation_request(aligned_obs, cycle_id=int(cycle_id))
+                    request_info = self._send_observation_request(
+                        aligned_obs,
+                        cycle_id=int(cycle_id),
+                        scheduler=scheduler,
+                    )
                     if request_info is not None:
                         scheduler.register_request(
                             obs_seq=request_info['obs_seq'],
@@ -1737,7 +1758,7 @@ class PolymetisInferenceClient:
                         }
 
                         with self.data_lock:
-                            if self.execution_mode == 'naive_async':
+                            if self._uses_async_execution():
                                 self.pending_action_responses.append(dict(response_entry))
                                 self.action_response_event.set()
                             else:
@@ -1756,7 +1777,7 @@ class PolymetisInferenceClient:
                             'downlink_latency_ms': downlink_latency_ms,
                             'recv_payload_bytes': None if recv_payload_bytes is None else int(recv_payload_bytes)
                         })
-                        if self.execution_mode != 'naive_async':
+                        if not self._uses_async_execution():
                             self.action_received.set()
                     elif data.get('type') == 'action_sequence':
                         # 接收动作序列
@@ -1787,7 +1808,7 @@ class PolymetisInferenceClient:
                         }
 
                         with self.data_lock:
-                            if self.execution_mode == 'naive_async':
+                            if self._uses_async_execution():
                                 self.pending_action_responses.append(dict(response_entry))
                                 self.action_response_event.set()
                             else:
@@ -1806,7 +1827,7 @@ class PolymetisInferenceClient:
                             'downlink_latency_ms': downlink_latency_ms,
                             'recv_payload_bytes': None if recv_payload_bytes is None else int(recv_payload_bytes)
                         })
-                        if self.execution_mode != 'naive_async':
+                        if not self._uses_async_execution():
                             self.action_received.set()
                         print(f"[客户端] 收到动作序列: chunk_id={chunk_id}, shape={actions.shape}")
             except Exception as e:
@@ -1815,7 +1836,7 @@ class PolymetisInferenceClient:
 
     def _inference_loop(self):
         """推理循环"""
-        if self.execution_mode == 'naive_async':
+        if self._uses_async_execution():
             self._run_naive_async_loop()
             return
 
