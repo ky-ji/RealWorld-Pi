@@ -13,6 +13,8 @@
 # ══════════════════════════════════════════════════════════════
 
 set -e  # Exit on error
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${SCRIPT_DIR}"
 
 # ──────────────────────── GPU 配置 ────────────────────────
 # 从命令行参数读取 GPU ID，默认使用 GPU 0
@@ -30,7 +32,7 @@ export PATH=$CONDA_PREFIX/bin:$PATH
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 # 暂时清空并重新设置，确保 Conda 环境路径绝对优先
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$CONDA_PREFIX/lib/python3.10/site-packages/nvidia/nvjitlink/lib:$LD_LIBRARY_PATH
-cd /home/yinmenghao/code/openpi
+cd "${REPO_ROOT}"
 
 # ──────────────────────── 训练参数配置 ────────────────────────
 

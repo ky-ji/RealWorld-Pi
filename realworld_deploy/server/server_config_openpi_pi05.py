@@ -12,6 +12,59 @@ OpenPI Pi0.5 推理服务器配置文件
   - 仅支持增量 (delta) 模式（与 OpenPI 训练一致，模型预测 delta，output transform 自动加 state）
 """
 
+import os
+from pathlib import Path
+
+
+REALWORLD_PI_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_CHECKPOINT_ROOT = REALWORLD_PI_ROOT / "checkpoints"
+
+
+def _checkpoint_root_candidates() -> list[Path]:
+    candidates: list[Path] = []
+    env_root = os.environ.get("OPENPI_CHECKPOINT_ROOT")
+    if env_root:
+        candidates.append(Path(env_root).expanduser())
+    candidates.extend(
+        [
+            DEFAULT_CHECKPOINT_ROOT,
+            Path("/data1/public/openpi/checkpoints/realworld-pi05"),
+        ]
+    )
+    unique_candidates: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.expanduser()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        unique_candidates.append(resolved)
+    return unique_candidates
+
+
+def _default_checkpoint_relpath(config_name: str) -> Path:
+    mapping = {
+        "pi05_stack_bowls_lora": Path(
+            "stack_bowls_lora_0208/pi05_stack_bowls_lora/stack_bowls_lora_v2/29999"
+        ),
+        "pi05_place_phone_lora": Path(
+            "place_phone_lora_0211/pi05_place_phone_lora/place_phone_lora_v2/19999"
+        ),
+        "pi05_assembly_things_lora": Path(
+            "assembly_things_lora_0209/pi05_assembly_things_lora/assembly_things_lora_v1/14999"
+        ),
+    }
+    return mapping[config_name]
+
+
+def _resolve_default_checkpoint_dir(config_name: str) -> Path:
+    relpath = _default_checkpoint_relpath(config_name)
+    for root in _checkpoint_root_candidates():
+        candidate = root / relpath
+        if candidate.exists():
+            return candidate
+    return _checkpoint_root_candidates()[0] / relpath
+
 # =============================================================================
 # 服务器配置
 # =============================================================================
@@ -29,9 +82,10 @@ CONFIG_NAME = "pi05_stack_bowls_lora"
 #CONFIG_NAME = "pi05_place_phone_lora"
 
 # OpenPI checkpoint 目录（包含 params/, train_state/, assets/ 等）
-#CHECKPOINT_DIR = "/home/yinmenghao/code/openpi/checkpoints/assembly_things_lora_0209/pi05_assembly_things_lora/assembly_things_lora_v1/14999"
-CHECKPOINT_DIR = "/home/yinmenghao/code/openpi/checkpoints/stack_bowls_lora_0208/pi05_stack_bowls_lora/stack_bowls_lora_v2/29999"
-#CHECKPOINT_DIR = "/home/yinmenghao/code/openpi/checkpoints/place_phone_lora_0211/pi05_place_phone_lora/place_phone_lora_v2/19999"
+CHECKPOINT_DIR = os.environ.get(
+    "OPENPI_CHECKPOINT_DIR",
+    str(_resolve_default_checkpoint_dir(CONFIG_NAME)),
+)
 # 推理设备（用于 PyTorch 模型加载，JAX 模型自动选择）
 DEVICE = "cuda"
 

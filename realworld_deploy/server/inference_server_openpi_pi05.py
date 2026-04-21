@@ -30,13 +30,13 @@ from scipy.spatial.transform import Rotation as R
 CURRENT_DIR = Path(__file__).resolve().parent
 REALWORLD_DEPLOY_DIR = CURRENT_DIR.parent
 REALWORLD_PI_ROOT = REALWORLD_DEPLOY_DIR.parent
-WORKSPACE_ROOT = REALWORLD_PI_ROOT.parent
 ROBOT_INFERENCE_DIR = REALWORLD_DEPLOY_DIR / "robot_inference"
 CONFIG_DIR = ROBOT_INFERENCE_DIR / "configs"
-OPENPI_ROOT = WORKSPACE_ROOT / "openpi"
+OPENPI_ROOT = REALWORLD_PI_ROOT
 OPENPI_SRC_DIR = OPENPI_ROOT / "src"
+OPENPI_CLIENT_SRC_DIR = OPENPI_ROOT / "packages" / "openpi-client" / "src"
 
-for path in (CURRENT_DIR, ROBOT_INFERENCE_DIR, CONFIG_DIR, OPENPI_SRC_DIR, OPENPI_ROOT):
+for path in (CURRENT_DIR, ROBOT_INFERENCE_DIR, CONFIG_DIR, OPENPI_CLIENT_SRC_DIR, OPENPI_SRC_DIR, OPENPI_ROOT):
     path_str = str(path)
     if path.exists() and path_str not in sys.path:
         sys.path.insert(0, path_str)
@@ -275,7 +275,7 @@ class OpenPiPi05InferenceServer:
         self.vlalab_run = None
         if VLALAB_AVAILABLE:
             ckpt_name = Path(checkpoint_dir).name[:24]
-            vlalab_dir = WORKSPACE_ROOT / "vlalab_runs"
+            vlalab_dir = REALWORLD_PI_ROOT / "vlalab_runs"
             try:
                 vlalab_dir.mkdir(parents=True, exist_ok=True)
                 self.vlalab_run = vlalab.init(
