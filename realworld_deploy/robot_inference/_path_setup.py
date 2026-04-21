@@ -6,7 +6,6 @@
     # 在需要导入的文件顶部添加：
     import _path_setup
 """
-import os
 import sys
 from pathlib import Path
 
@@ -15,34 +14,50 @@ def setup_paths():
     """设置 Python 路径"""
     # 获取当前文件所在目录（robot_inference）
     ROBOT_INFERENCE_DIR = Path(__file__).parent.resolve()
-    
+
     # 获取 realworld_deploy 目录
     REALWORLD_DEPLOY_DIR = ROBOT_INFERENCE_DIR.parent
-    
+    REALWORLD_PI_ROOT = REALWORLD_DEPLOY_DIR.parent
+    OPENPI_SRC_DIR = REALWORLD_PI_ROOT / "src"
+    OPENPI_CLIENT_SRC_DIR = REALWORLD_PI_ROOT / "packages" / "openpi-client" / "src"
+
     # 需要添加到 sys.path 的目录
     paths_to_add = [
-        str(ROBOT_INFERENCE_DIR),           # robot_inference/
-        str(ROBOT_INFERENCE_DIR / 'configs'),  # robot_inference/configs/
-        str(ROBOT_INFERENCE_DIR / 'control'),  # robot_inference/control/
-        str(ROBOT_INFERENCE_DIR / 'control' / 'cameras'),  # robot_inference/control/cameras/
+        str(ROBOT_INFERENCE_DIR),  # robot_inference/
+        str(ROBOT_INFERENCE_DIR / "configs"),  # robot_inference/configs/
+        str(ROBOT_INFERENCE_DIR / "control"),  # robot_inference/control/
+        str(ROBOT_INFERENCE_DIR / "control" / "cameras"),  # robot_inference/control/cameras/
+        str(OPENPI_SRC_DIR),  # vendored openpi/
+        str(OPENPI_CLIENT_SRC_DIR),  # vendored openpi-client/
+        str(REALWORLD_PI_ROOT),  # repo root
     ]
-    
+
     # 添加到 sys.path（如果不存在）
     for path in paths_to_add:
         if path not in sys.path:
             sys.path.insert(0, path)
-    
-    return ROBOT_INFERENCE_DIR, REALWORLD_DEPLOY_DIR
+
+    return ROBOT_INFERENCE_DIR, REALWORLD_DEPLOY_DIR, REALWORLD_PI_ROOT, OPENPI_SRC_DIR, OPENPI_CLIENT_SRC_DIR
 
 
 def get_project_root():
-    """获取项目根目录（robot_inference）"""
-    return Path(__file__).parent.resolve()
+    """获取项目根目录（RealWorld-Pi 仓库根目录）"""
+    return REALWORLD_PI_ROOT
+
+
+def get_openpi_src_dir() -> Path:
+    """获取 vendored openpi 源码目录。"""
+    return OPENPI_SRC_DIR
+
+
+def get_openpi_client_src_dir() -> Path:
+    """获取 vendored openpi-client 源码目录。"""
+    return OPENPI_CLIENT_SRC_DIR
 
 
 def get_keys_dir():
     """获取 keys 目录"""
-    return Path(__file__).parent.resolve() / 'keys'
+    return Path(__file__).parent.resolve() / "keys"
 
 
 def get_ssh_key_path(key_name: str = 'id_server') -> str:
@@ -56,13 +71,13 @@ def get_ssh_key_path(key_name: str = 'id_server') -> str:
 
 def get_log_dir() -> Path:
     """获取日志目录路径，如果不存在则创建"""
-    log_dir = ROBOT_INFERENCE_DIR / 'log'
+    log_dir = ROBOT_INFERENCE_DIR / "log"
     log_dir.mkdir(parents=True, exist_ok=True)
     return log_dir
 
 
 # 自动设置路径
-ROBOT_INFERENCE_DIR, REALWORLD_DEPLOY_DIR = setup_paths()
+ROBOT_INFERENCE_DIR, REALWORLD_DEPLOY_DIR, REALWORLD_PI_ROOT, OPENPI_SRC_DIR, OPENPI_CLIENT_SRC_DIR = setup_paths()
 
 # 导出常用路径
 __all__ = [
@@ -71,7 +86,11 @@ __all__ = [
     'get_keys_dir',
     'get_ssh_key_path',
     'get_log_dir',
+    'get_openpi_src_dir',
+    'get_openpi_client_src_dir',
     'ROBOT_INFERENCE_DIR',
-    'REALWORLD_DEPLOY_DIR'
+    'REALWORLD_DEPLOY_DIR',
+    'REALWORLD_PI_ROOT',
+    'OPENPI_SRC_DIR',
+    'OPENPI_CLIENT_SRC_DIR',
 ]
-

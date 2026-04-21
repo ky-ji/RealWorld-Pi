@@ -18,6 +18,10 @@ train_log.txt
 # 即使拼写错误也能覆盖到的规则
 *model*/
 *weights*/
+!src/openpi/models/
+!src/openpi/models/**
+!src/openpi/models_pytorch/
+!src/openpi/models_pytorch/**
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

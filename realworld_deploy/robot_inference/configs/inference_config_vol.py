@@ -42,6 +42,11 @@ ENABLE_DEPTH = True          # 是否启用深度（仅 RealSense 相机）
 
 # ==================== 推理配置 ====================
 INFERENCE_FREQ = 10.0        # 推理频率 (Hz)
+EXECUTION_MODE = "naive_async"
+EXECUTE_HORIZON = 4
+DELAY_ESTIMATE_ALPHA = 0.5
+DELAY_ESTIMATE_INIT_STEPS = 2
+MAX_DEADLINE_OVERRUN_STEPS = 2
 N_OBS_STEPS = 2              # 观测步数（历史帧数）
 CAMERA_FREQ = 30.0           # 摄像头采样频率 (Hz)
 STEPS_PER_INFERENCE = 6    # 每次推理执行的动作数量（1 = 最实时，6 = 官方默认值）

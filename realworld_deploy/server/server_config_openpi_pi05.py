@@ -12,6 +12,13 @@ OpenPI Pi0.5 推理服务器配置文件
   - 仅支持增量 (delta) 模式（与 OpenPI 训练一致，模型预测 delta，output transform 自动加 state）
 """
 
+from pathlib import Path
+import os
+
+
+REALWORLD_PI_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_CHECKPOINT_ROOT = REALWORLD_PI_ROOT / "checkpoints"
+
 # =============================================================================
 # 服务器配置
 # =============================================================================
@@ -29,9 +36,12 @@ CONFIG_NAME = "pi05_stack_bowls_lora"
 #CONFIG_NAME = "pi05_place_phone_lora"
 
 # OpenPI checkpoint 目录（包含 params/, train_state/, assets/ 等）
-#CHECKPOINT_DIR = "/home/yinmenghao/code/openpi/checkpoints/assembly_things_lora_0209/pi05_assembly_things_lora/assembly_things_lora_v1/14999"
-CHECKPOINT_DIR = "/home/yinmenghao/code/openpi/checkpoints/stack_bowls_lora_0208/pi05_stack_bowls_lora/stack_bowls_lora_v2/29999"
-#CHECKPOINT_DIR = "/home/yinmenghao/code/openpi/checkpoints/place_phone_lora_0211/pi05_place_phone_lora/place_phone_lora_v2/19999"
+#CHECKPOINT_DIR = str(DEFAULT_CHECKPOINT_ROOT / "assembly_things_lora_0209" / "pi05_assembly_things_lora" / "assembly_things_lora_v1" / "14999")
+CHECKPOINT_DIR = os.environ.get(
+    "OPENPI_CHECKPOINT_DIR",
+    str(DEFAULT_CHECKPOINT_ROOT / "stack_bowls_lora_0208" / "pi05_stack_bowls_lora" / "stack_bowls_lora_v2" / "29999"),
+)
+#CHECKPOINT_DIR = str(DEFAULT_CHECKPOINT_ROOT / "place_phone_lora_0211" / "pi05_place_phone_lora" / "place_phone_lora_v2" / "19999")
 # 推理设备（用于 PyTorch 模型加载，JAX 模型自动选择）
 DEVICE = "cuda"
 
@@ -52,10 +62,15 @@ ACTION_DIM = 7                     # 动作维度：[x, y, z, ax, ay, az, grippe
 # 推理配置
 # =============================================================================
 INFERENCE_FREQ = 10.0              # 推理频率 (Hz)
+EXECUTION_MODE = os.environ.get("OPENPI_EXECUTION_MODE", "naive_async")
+EXECUTE_HORIZON = int(os.environ.get("OPENPI_EXECUTE_HORIZON", "4"))
+DELAY_ESTIMATE_ALPHA = float(os.environ.get("OPENPI_DELAY_ESTIMATE_ALPHA", "0.5"))
+DELAY_ESTIMATE_INIT_STEPS = int(os.environ.get("OPENPI_DELAY_ESTIMATE_INIT_STEPS", "2"))
+MAX_DEADLINE_OVERRUN_STEPS = int(os.environ.get("OPENPI_MAX_DEADLINE_OVERRUN_STEPS", "2"))
 
 # Chunk 和推理参数
 # 注意：OpenPI 的 action_horizon 在训练 config 中设为 10，即模型输出 (10, 7) 的 action chunk
-TARGET_CHUNK_SIZE = 8              # 每次取用的 chunk 步数（≤ action_horizon=10）
+TARGET_CHUNK_SIZE = 10             # 每次发送完整 action horizon，执行窗口由 client 的 execute_horizon 控制
 
 # 动作放大系数（补偿控制器跟踪衰减）
 # 增量模型预测的 delta 通常较小，需要放大才能有效移动

@@ -14,16 +14,17 @@
   └── meta/info.json
 
 使用示例：
-  CUDA_VISIBLE_DEVICES=3 /home/yinmenghao/code/openpi/.venv/bin/python \
-   /home/yinmenghao/code/openpi/realworld_deploy/server/eval_on_dataset_openpi.py \
-      --checkpoint_dir /home/yinmenghao/code/openpi/checkpoints/stack_bowls_lora_0208/pi05_stack_bowls_lora/stack_bowls_lora_v2/29999 \
+  REPO_ROOT=/path/to/RealWorld-Pi
+  CUDA_VISIBLE_DEVICES=3 "${REPO_ROOT}/.venv/bin/python" \
+   "${REPO_ROOT}/realworld_deploy/server/eval_on_dataset_openpi.py" \
+      --checkpoint_dir "${REPO_ROOT}/checkpoints/stack_bowls_lora_0208/pi05_stack_bowls_lora/stack_bowls_lora_v2/29999" \
       --config_name pi05_stack_bowls_lora \
       --dataset_dir /data1/vla-data/processed/PI/data/010_stack_bowls_0209 \
       --episode_id 50 -N 10
 
- CUDA_VISIBLE_DEVICES=3 /home/yinmenghao/code/openpi/.venv/bin/python \
-   /home/yinmenghao/code/openpi/realworld_deploy/server/eval_on_dataset_openpi.py \
-      --checkpoint_dir /home/yinmenghao/code/openpi/checkpoints/place_phone_lora_0211/pi05_place_phone_lora/place_phone_lora_v2/19999 \
+ CUDA_VISIBLE_DEVICES=3 "${REPO_ROOT}/.venv/bin/python" \
+   "${REPO_ROOT}/realworld_deploy/server/eval_on_dataset_openpi.py" \
+      --checkpoint_dir "${REPO_ROOT}/checkpoints/place_phone_lora_0211/pi05_place_phone_lora/place_phone_lora_v2/19999" \
       --config_name pi05_place_phone_lora \
       --dataset_dir /data1/vla-data/processed/PI/data/009_place_phone \
       --episode_id 155 -N 10

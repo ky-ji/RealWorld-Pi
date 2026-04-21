@@ -7,10 +7,11 @@
   - 结果写回原 JSON 文件
 
 使用示例：
-  CUDA_VISIBLE_DEVICES=3 /home/yinmenghao/code/openpi/.venv/bin/python \
-      /home/yinmenghao/code/openpi/realworld_deploy/server/debug/single_step_inference.py \
-      --json_path /home/yinmenghao/code/openpi/realworld_deploy/server/debug/test_jsons/run_20260226_135534.json \
-      --checkpoint_dir /home/yinmenghao/code/openpi/checkpoints/place_phone_lora_0211/pi05_place_phone_lora/place_phone_lora_v3/15000 \
+  REPO_ROOT=/path/to/RealWorld-Pi
+  CUDA_VISIBLE_DEVICES=3 "${REPO_ROOT}/.venv/bin/python" \
+      "${REPO_ROOT}/realworld_deploy/server/debug/single_step_inference.py" \
+      --json_path "${REPO_ROOT}/realworld_deploy/server/debug/test_jsons/run_20260226_135534.json" \
+      --checkpoint_dir "${REPO_ROOT}/checkpoints/place_phone_lora_0211/pi05_place_phone_lora/place_phone_lora_v3/15000" \
       --config_name pi05_place_phone_lora
 """
 from __future__ import annotations
@@ -73,8 +74,8 @@ def main():
                         help="OpenPI checkpoint 目录路径")
     parser.add_argument("--config_name", type=str, required=True,
                         help="OpenPI 训练配置名称 (如 pi05_place_phone_lora)")
-    parser.add_argument("--chunk_size", type=int, default=8,
-                        help="从 action chunk 中取前多少步 (默认 8)")
+    parser.add_argument("--chunk_size", type=int, default=10,
+                        help="从 action chunk 中取前多少步 (默认 10)")
     args = parser.parse_args()
 
     # ----- 读取输入 JSON -----

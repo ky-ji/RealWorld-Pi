@@ -30,6 +30,7 @@ except Exception as e:
 
 # 设置路径（使代码可在任意目录运行）
 import _path_setup
+from async_chunk_scheduler import AsyncActionChunkScheduler
 import tcp_binary_protocol as binary_proto
 
 try:
@@ -324,6 +325,9 @@ class LocalSocketClient:
         self.protocol_camera_names = list(camera_names)
         self.protocol_obs_seq = 0
 
+    def peek_next_obs_seq(self) -> int:
+        return int(self.protocol_obs_seq)
+
     def _make_upload_endpoint(self) -> str:
         return f"tcp://{self.server_ip}:{self.server_port}"
 
@@ -584,6 +588,9 @@ class SSHTunnelClient:
 
     def configure_protocol(self, session_id: int, camera_names):
         self._transport.configure_protocol(session_id, camera_names)
+
+    def peek_next_obs_seq(self) -> int:
+        return self._transport.peek_next_obs_seq()
         
     def start_tunnel(self):
         print(
@@ -685,6 +692,8 @@ class PolymetisInferenceClient:
                     IMAGE_QUALITY,
                     INFERENCE_FREQ,
                     COLLECT_OBS_FREQ, EXECUTION_FREQ,
+                    EXECUTION_MODE, EXECUTE_HORIZON,
+                    DELAY_ESTIMATE_ALPHA, DELAY_ESTIMATE_INIT_STEPS, MAX_DEADLINE_OVERRUN_STEPS,
                     ARRIVAL_SETTLE_POS_DELTA_THRESHOLD,
                     ARRIVAL_SETTLE_STABLE_COUNT, ARRIVAL_CHECK_FREQ,
                     ARRIVAL_LOG_INTERVAL_SEC, ARRIVAL_MAX_WAIT_SEC,
@@ -704,6 +713,11 @@ class PolymetisInferenceClient:
                     'inference_freq': INFERENCE_FREQ,
                     'collect_obs_freq': COLLECT_OBS_FREQ,
                     'execution_freq': EXECUTION_FREQ,
+                    'execution_mode': EXECUTION_MODE,
+                    'execute_horizon': EXECUTE_HORIZON,
+                    'delay_estimate_alpha': DELAY_ESTIMATE_ALPHA,
+                    'delay_estimate_init_steps': DELAY_ESTIMATE_INIT_STEPS,
+                    'max_deadline_overrun_steps': MAX_DEADLINE_OVERRUN_STEPS,
                     'arrival_settle_pos_delta_threshold': ARRIVAL_SETTLE_POS_DELTA_THRESHOLD,
                     'arrival_settle_stable_count': ARRIVAL_SETTLE_STABLE_COUNT,
                     'arrival_check_freq': ARRIVAL_CHECK_FREQ,
@@ -724,6 +738,8 @@ class PolymetisInferenceClient:
                     IMAGE_QUALITY,
                     INFERENCE_FREQ,
                     COLLECT_OBS_FREQ, EXECUTION_FREQ,
+                    EXECUTION_MODE, EXECUTE_HORIZON,
+                    DELAY_ESTIMATE_ALPHA, DELAY_ESTIMATE_INIT_STEPS, MAX_DEADLINE_OVERRUN_STEPS,
                     ARRIVAL_SETTLE_POS_DELTA_THRESHOLD,
                     ARRIVAL_SETTLE_STABLE_COUNT, ARRIVAL_CHECK_FREQ,
                     ARRIVAL_LOG_INTERVAL_SEC, ARRIVAL_MAX_WAIT_SEC,
@@ -746,6 +762,11 @@ class PolymetisInferenceClient:
                     'inference_freq': INFERENCE_FREQ,
                     'collect_obs_freq': COLLECT_OBS_FREQ,
                     'execution_freq': EXECUTION_FREQ,
+                    'execution_mode': EXECUTION_MODE,
+                    'execute_horizon': EXECUTE_HORIZON,
+                    'delay_estimate_alpha': DELAY_ESTIMATE_ALPHA,
+                    'delay_estimate_init_steps': DELAY_ESTIMATE_INIT_STEPS,
+                    'max_deadline_overrun_steps': MAX_DEADLINE_OVERRUN_STEPS,
                     'arrival_settle_pos_delta_threshold': ARRIVAL_SETTLE_POS_DELTA_THRESHOLD,
                     'arrival_settle_stable_count': ARRIVAL_SETTLE_STABLE_COUNT,
                     'arrival_check_freq': ARRIVAL_CHECK_FREQ,
@@ -813,6 +834,11 @@ class PolymetisInferenceClient:
         self.inference_interval = 1.0 / self.inference_freq
         self.collect_obs_freq = float(self.config.get('collect_obs_freq', 30.0))
         self.execution_freq = float(self.config.get('execution_freq', 30.0))
+        self.execution_mode = str(self.config.get('execution_mode', 'naive_async'))
+        self.execute_horizon = max(1, int(self.config.get('execute_horizon', 4)))
+        self.delay_estimate_alpha = float(self.config.get('delay_estimate_alpha', 0.5))
+        self.delay_estimate_init_steps = max(1, int(self.config.get('delay_estimate_init_steps', 2)))
+        self.max_deadline_overrun_steps = max(0, int(self.config.get('max_deadline_overrun_steps', 2)))
         self.image_quality = self.config['image_quality']
         self.image_encode_backend = _FAST_JPEG_BACKEND
         self.arrival_settle_pos_delta_threshold = float(self.config.get('arrival_settle_pos_delta_threshold', 0.001))
@@ -863,7 +889,9 @@ class PolymetisInferenceClient:
         self.last_executed_chunk_id = None
         self.next_action_timestamp = None
         self.pending_action_chunks = deque()
+        self.pending_action_responses = deque()
         self.pending_chunk_receipt_ack = None
+        self.action_response_event = Event()
         
         # 回退点过滤
         self.last_action_output = None
@@ -883,6 +911,7 @@ class PolymetisInferenceClient:
             'actions': [],
             'executed': [],
             'heartbeat': [],
+            'scheduler': [],
         }
 
     def _reset_remote_episode(self) -> bool:
@@ -969,9 +998,10 @@ class PolymetisInferenceClient:
             
             self.control_thread = Thread(target=self._control_loop, daemon=True)
             self.control_thread.start()
-            
-            self.arrival_monitor_thread = Thread(target=self._arrival_monitor_loop, daemon=True)
-            self.arrival_monitor_thread.start()
+
+            if self.execution_mode != 'naive_async':
+                self.arrival_monitor_thread = Thread(target=self._arrival_monitor_loop, daemon=True)
+                self.arrival_monitor_thread.start()
             
             self._inference_loop()
             
@@ -1088,6 +1118,360 @@ class PolymetisInferenceClient:
         with self.data_lock:
             if self.pending_chunk_receipt_ack == ack:
                 self.pending_chunk_receipt_ack = None
+
+    def _enqueue_action_response(self, response: Dict):
+        with self.data_lock:
+            self.pending_action_responses.append(dict(response))
+            self.action_response_event.set()
+
+    def _pop_matching_action_response(self, obs_seq: Optional[int]) -> Optional[Dict]:
+        with self.data_lock:
+            if not self.pending_action_responses:
+                self.action_response_event.clear()
+                return None
+
+            matched = None
+            retained = deque()
+            while self.pending_action_responses:
+                item = self.pending_action_responses.popleft()
+                item_obs_seq = item.get('obs_seq')
+                if matched is None and (
+                    obs_seq is None
+                    or item_obs_seq is None
+                    or int(item_obs_seq) == int(obs_seq)
+                ):
+                    matched = item
+                else:
+                    retained.append(item)
+            self.pending_action_responses = retained
+            if not self.pending_action_responses:
+                self.action_response_event.clear()
+            return matched
+
+    def _drain_action_responses(self) -> list[Dict]:
+        with self.data_lock:
+            if not self.pending_action_responses:
+                self.action_response_event.clear()
+                return []
+            responses = list(self.pending_action_responses)
+            self.pending_action_responses.clear()
+            self.action_response_event.clear()
+            return responses
+
+    def _wait_for_action_response(self, obs_seq: Optional[int], timeout: float) -> Optional[Dict]:
+        deadline = time.monotonic() + max(0.0, float(timeout))
+        while self.running and time.monotonic() < deadline:
+            response = self._pop_matching_action_response(obs_seq)
+            if response is not None:
+                return response
+            remaining = max(0.0, deadline - time.monotonic())
+            wait_timeout = min(0.05, remaining)
+            if wait_timeout <= 0:
+                break
+            self.action_response_event.wait(timeout=wait_timeout)
+        return None
+
+    def _wait_until_action_time(self, target_time: float, scheduler: AsyncActionChunkScheduler):
+        while self.running:
+            self._apply_pending_async_responses(scheduler)
+            remaining = float(target_time) - self._get_relative_time()
+            if remaining <= 0:
+                break
+            self.action_response_event.wait(timeout=min(0.01, remaining))
+
+    def _send_observation_request(self, aligned_obs: Dict, *, cycle_id: int) -> Optional[Dict]:
+        last_pose = aligned_obs['pose']
+        last_gripper = aligned_obs['gripper']
+        observation_log_entry = {
+            'step': self.observations_sent,
+            'cycle_id': int(cycle_id),
+            'pose': last_pose.tolist(),
+            'gripper': last_gripper.tolist(),
+            'timestamp': aligned_obs['timestamp'],
+        }
+        self.trajectory_log['observations'].append(observation_log_entry)
+
+        latest_obs_images = aligned_obs['images']
+        obs_prepare_start_ns = time.time_ns()
+
+        images_payload = {}
+        for cam_idx in range(latest_obs_images.shape[0]):
+            img = latest_obs_images[cam_idx]
+            cam_name = self.camera_names[cam_idx] if cam_idx < len(self.camera_names) else f"camera_{cam_idx}"
+            images_payload[cam_name] = _encode_transport_image(img, self.image_quality)
+
+        pending_chunk_receipt_ack = self._get_pending_chunk_receipt_ack()
+        obs_msg = {
+            'type': 'observation',
+            'images': images_payload,
+            'poses': [np.asarray(aligned_obs['pose'], dtype=np.float32).tolist()],
+            'grippers': [np.asarray(aligned_obs['gripper'], dtype=np.float32).tolist()],
+            'timestamps': [float(aligned_obs['timestamp'])],
+        }
+        if pending_chunk_receipt_ack is not None:
+            obs_msg['client_last_chunk_id'] = int(pending_chunk_receipt_ack['chunk_id'])
+            obs_msg['client_last_chunk_recv_timestamp_ns'] = int(pending_chunk_receipt_ack['client_chunk_recv_timestamp_ns'])
+
+        obs_prepare_end_ns = time.time_ns()
+        obs_seq = self.client.peek_next_obs_seq() if hasattr(self.client, 'peek_next_obs_seq') else self.observations_sent
+        send_ok, client_obs_send_timestamp_ns, protocol_pack_latency_ms, sendall_block_latency_ms = self.client.send_data_with_timestamp(
+            obs_msg,
+            timestamp_ns_field='client_obs_send_timestamp_ns',
+            timestamp_s_field='send_timestamp',
+        )
+        observation_log_entry['obs_seq'] = int(obs_seq)
+        observation_log_entry['local_obs_prepare_latency_ms'] = (obs_prepare_end_ns - obs_prepare_start_ns) / 1e6
+        observation_log_entry['local_protocol_pack_latency_ms'] = protocol_pack_latency_ms
+        observation_log_entry['local_sendall_block_latency_ms'] = sendall_block_latency_ms
+        if protocol_pack_latency_ms is not None:
+            observation_log_entry['local_obs_prepare_and_pack_latency_ms'] = (
+                observation_log_entry['local_obs_prepare_latency_ms'] + protocol_pack_latency_ms
+            )
+        if protocol_pack_latency_ms is not None and sendall_block_latency_ms is not None:
+            observation_log_entry['local_obs_prepare_pack_and_sendall_latency_ms'] = (
+                observation_log_entry['local_obs_prepare_latency_ms'] + protocol_pack_latency_ms + sendall_block_latency_ms
+            )
+        if not send_ok or client_obs_send_timestamp_ns is None:
+            observation_log_entry['send_failed'] = True
+            return None
+
+        observation_log_entry['client_obs_send_timestamp_ns'] = int(client_obs_send_timestamp_ns)
+        self._clear_pending_chunk_receipt_ack(pending_chunk_receipt_ack)
+        self.observations_sent += 1
+        print(
+            f"[客户端][Async] 发送观测 #{self.observations_sent} "
+            f"(obs_seq={int(obs_seq)}, cycle={int(cycle_id)})"
+        )
+        return {
+            'obs_seq': int(obs_seq),
+            'send_timestamp_ns': int(client_obs_send_timestamp_ns),
+            'cycle_id': int(cycle_id),
+        }
+
+    def _apply_pending_async_responses(self, scheduler: AsyncActionChunkScheduler):
+        for response in self._drain_action_responses():
+            obs_seq = response.get('obs_seq')
+            if obs_seq is None:
+                scheduler_event = {
+                    'obs_seq': None,
+                    'chunk_id': response.get('chunk_id'),
+                    'applied': False,
+                    'dropped_reason': 'missing_obs_seq',
+                }
+                self.trajectory_log['scheduler'].append(scheduler_event)
+                print("[客户端][Async] 丢弃无 obs_seq 的动作响应")
+                continue
+
+            integration = scheduler.integrate_response(
+                obs_seq=int(obs_seq),
+                chunk=response['action'],
+                recv_timestamp_ns=int(response['received_timestamp_ns']),
+                chunk_id=response.get('chunk_id'),
+            )
+            scheduler_event = {
+                'obs_seq': int(integration.obs_seq),
+                'chunk_id': integration.chunk_id,
+                'send_step_index': integration.send_step_index,
+                'elapsed_steps': integration.elapsed_steps,
+                'actual_delay_steps': integration.actual_delay_steps,
+                'remaining_prefix_steps': integration.remaining_prefix_steps,
+                'deadline_overrun_steps': integration.deadline_overrun_steps,
+                'delay_estimate_steps': integration.delay_estimate_steps,
+                'applied': bool(integration.applied),
+                'dropped_reason': integration.dropped_reason,
+                'pending_request_count': scheduler.pending_request_count,
+            }
+            self.trajectory_log['scheduler'].append(scheduler_event)
+
+            if integration.applied:
+                print(
+                    f"[客户端][Async] 合并 obs_seq={integration.obs_seq}, "
+                    f"chunk_id={integration.chunk_id}, delay={integration.actual_delay_steps}, "
+                    f"remaining_prefix={integration.remaining_prefix_steps}, "
+                    f"delay_est={integration.delay_estimate_steps}"
+                )
+            else:
+                print(
+                    f"[客户端][Async] 丢弃 obs_seq={integration.obs_seq}, "
+                    f"chunk_id={integration.chunk_id}, reason={integration.dropped_reason}"
+                )
+
+    def _execute_async_action_step(self, scheduler: AsyncActionChunkScheduler):
+        action_step = scheduler.current_action()
+        source_obs_seq, source_chunk_id = scheduler.current_action_source()
+        current_time = self._get_relative_time()
+        if self.next_action_timestamp is None:
+            target_time = current_time
+        else:
+            target_time = max(float(self.next_action_timestamp), current_time)
+
+        self._wait_until_action_time(target_time, scheduler)
+        if not self.running:
+            return
+
+        single_action = np.asarray(action_step, dtype=np.float32).reshape(-1)
+        if len(single_action) == 8:
+            pose_7d = single_action[:7]
+            gripper_1d = single_action[7:8]
+        elif len(single_action) == 7:
+            pose_7d = single_action
+            gripper_1d = np.array([1.0], dtype=np.float32)
+        else:
+            print(f"[客户端][Async] 警告: 动作维度不匹配: {len(single_action)}，保持当前目标")
+            scheduler.advance(1)
+            self.iter_idx += 1
+            self.next_action_timestamp = float(target_time) + self.inference_interval
+            return
+
+        target_pos, target_quat, target_gripper_open = DPFormatConverter.dp_to_polymetis_action(pose_7d, gripper_1d)
+
+        current_pos, current_quat = self.robot.get_ee_pose()
+        if current_pos is not None and current_quat is not None:
+            current_pos_np = current_pos.cpu().numpy()
+            current_quat_np = current_quat.cpu().numpy()
+            target_pos, target_quat, _ok = self._project_to_feasible(
+                current_pos_np,
+                current_quat_np,
+                target_pos,
+                target_quat,
+            )
+
+        with self.target_lock:
+            self.current_target_pos = target_pos
+            self.current_target_quat = target_quat
+
+        if self.gripper is not None and target_gripper_open != self.last_gripper_state:
+            action_name = "打开" if target_gripper_open else "关闭"
+            print(f"[客户端] 夹爪{action_name}...")
+            try:
+                if target_gripper_open:
+                    self.gripper.goto(
+                        width=0.09,
+                        speed=0.3,
+                        force=1.0,
+                        blocking=True,
+                    )
+                else:
+                    self.gripper.grasp(
+                        speed=0.2,
+                        force=1.0,
+                        grasp_width=0.0,
+                        epsilon_inner=0.1,
+                        epsilon_outer=0.1,
+                        blocking=True,
+                    )
+                actual_width = self.gripper.get_state().width
+                print(f"✓ 夹爪已{action_name} (实际宽度: {actual_width:.4f}m)")
+                self.last_gripper_state = target_gripper_open
+            except Exception as e:
+                print(f"✗ 夹爪控制失败: {e}")
+
+        self.gripper_open = target_gripper_open
+        self.last_action_output = (target_pos.copy(), target_quat.copy())
+        self.trajectory_log['executed'].append({
+            'step': int(scheduler.executed_steps),
+            'cycle_id': int(scheduler.executed_steps // self.execute_horizon),
+            'source_obs_seq': source_obs_seq,
+            'source_chunk_id': source_chunk_id,
+            'delay_estimate_steps': scheduler.delay_estimate_steps,
+            'pending_request_count': scheduler.pending_request_count,
+            'pos': target_pos.tolist(),
+            'quat': target_quat.tolist(),
+            'gripper_open': target_gripper_open,
+            'timestamp': float(target_time),
+        })
+        print(
+            f"[客户端][Async] 执行动作 step={scheduler.executed_steps} "
+            f"source_obs_seq={source_obs_seq} source_chunk_id={source_chunk_id}"
+        )
+
+        scheduler.advance(1)
+        self.iter_idx += 1
+        self.next_action_timestamp = float(target_time) + self.inference_interval
+
+    def _run_naive_async_loop(self):
+        print(f"[客户端] 推理循环已启动")
+        print(f"  基础频率: {self.inference_freq:.1f}Hz (dt={self.inference_interval:.3f}s)")
+        print(
+            f"  调度模式: naive_async, execute_horizon={self.execute_horizon}, "
+            f"delay_alpha={self.delay_estimate_alpha}, init_steps={self.delay_estimate_init_steps}"
+        )
+        print("[客户端] 等待观测缓冲区填充...")
+        time.sleep(1.0)
+
+        initial_obs = None
+        while self.running and initial_obs is None:
+            initial_obs = self.obs_buffer.get_aligned_obs()
+            if initial_obs is None:
+                time.sleep(0.01)
+        if not self.running:
+            return
+
+        initial_request = self._send_observation_request(initial_obs, cycle_id=-1)
+        if initial_request is None:
+            print("[客户端][Async] 初始观测发送失败")
+            return
+
+        initial_response = self._wait_for_action_response(
+            initial_request['obs_seq'],
+            timeout=max(5.0, self.inference_interval * 20.0),
+        )
+        if initial_response is None:
+            print(
+                f"[客户端][Async] 等待初始 action chunk 超时, obs_seq={initial_request['obs_seq']}"
+            )
+            return
+
+        initial_chunk = np.asarray(initial_response['action'], dtype=np.float32)
+        if initial_chunk.ndim == 1:
+            initial_chunk = initial_chunk.reshape(1, -1)
+        action_horizon = int(initial_chunk.shape[0])
+        action_dim = int(initial_chunk.shape[1])
+        scheduler = AsyncActionChunkScheduler(
+            action_horizon=action_horizon,
+            action_dim=action_dim,
+            execute_horizon=self.execute_horizon,
+            dt_exec=self.inference_interval,
+            delay_estimate_alpha=self.delay_estimate_alpha,
+            delay_estimate_init_steps=self.delay_estimate_init_steps,
+            max_deadline_overrun_steps=self.max_deadline_overrun_steps,
+        )
+        scheduler.set_initial_chunk(
+            initial_chunk,
+            obs_seq=initial_response.get('obs_seq'),
+            chunk_id=initial_response.get('chunk_id'),
+        )
+        self.trajectory_log['scheduler'].append({
+            'event': 'initial_chunk',
+            'obs_seq': initial_response.get('obs_seq'),
+            'chunk_id': initial_response.get('chunk_id'),
+            'action_horizon': action_horizon,
+            'execute_horizon': self.execute_horizon,
+        })
+        self.next_action_timestamp = None
+        print(
+            f"[客户端][Async] ✓ 初始 chunk 就绪: obs_seq={initial_response.get('obs_seq')}, "
+            f"chunk_id={initial_response.get('chunk_id')}, horizon={action_horizon}"
+        )
+
+        while self.running:
+            if scheduler.executed_steps % self.execute_horizon == 0:
+                cycle_id = scheduler.executed_steps // self.execute_horizon
+                aligned_obs = self.obs_buffer.get_aligned_obs()
+                if aligned_obs is not None:
+                    request_info = self._send_observation_request(aligned_obs, cycle_id=int(cycle_id))
+                    if request_info is not None:
+                        scheduler.register_request(
+                            obs_seq=request_info['obs_seq'],
+                            send_timestamp_ns=request_info['send_timestamp_ns'],
+                        )
+                else:
+                    print(
+                        f"[客户端][Async] 警告: cycle={cycle_id} 缺少对齐观测，继续执行已承诺 chunk"
+                    )
+
+            self._apply_pending_async_responses(scheduler)
+            self._execute_async_action_step(scheduler)
 
     def _arm_arrival_detection(self, chunk_id: Optional[int]):
         with self.arrival_state_lock:
@@ -1339,23 +1723,31 @@ class PolymetisInferenceClient:
                             downlink_latency_ms = (
                                 int(received_timestamp_ns) + int(self.clock_offset_ns) - int(server_chunk_send_timestamp_ns)
                             ) / 1e6
-                        
+
+                        chunk_id = int(raw_chunk_id) if raw_chunk_id is not None else self.actions_received
+                        response_entry = {
+                            'chunk_id': chunk_id,
+                            'obs_seq': None if data.get('obs_seq') is None else int(data.get('obs_seq')),
+                            'action': action,
+                            'received_time': received_time,
+                            'received_timestamp_ns': int(received_timestamp_ns),
+                            'server_chunk_send_timestamp_ns': None if server_chunk_send_timestamp_ns is None else int(server_chunk_send_timestamp_ns),
+                            'downlink_latency_ms': downlink_latency_ms,
+                            'recv_payload_bytes': None if recv_payload_bytes is None else int(recv_payload_bytes),
+                        }
+
                         with self.data_lock:
-                            chunk_id = int(raw_chunk_id) if raw_chunk_id is not None else self.actions_received
-                            self.pending_action_chunks.append({
-                                'chunk_id': chunk_id,
-                                'action': action,
-                                'received_time': received_time,
-                                'received_timestamp_ns': int(received_timestamp_ns),
-                                'server_chunk_send_timestamp_ns': None if server_chunk_send_timestamp_ns is None else int(server_chunk_send_timestamp_ns),
-                                'downlink_latency_ms': downlink_latency_ms,
-                                'recv_payload_bytes': None if recv_payload_bytes is None else int(recv_payload_bytes)
-                            })
+                            if self.execution_mode == 'naive_async':
+                                self.pending_action_responses.append(dict(response_entry))
+                                self.action_response_event.set()
+                            else:
+                                self.pending_action_chunks.append(dict(response_entry))
                             self.actions_received += 1
                         self._set_pending_chunk_receipt_ack(chunk_id, received_timestamp_ns)
                         self.trajectory_log['actions'].append({
                             'step': chunk_id,
                             'chunk_id': chunk_id,
+                            'obs_seq': None if data.get('obs_seq') is None else int(data.get('obs_seq')),
                             'action': action.tolist(),
                             'shape': list(action.shape),
                             'received_time': received_time,
@@ -1364,7 +1756,8 @@ class PolymetisInferenceClient:
                             'downlink_latency_ms': downlink_latency_ms,
                             'recv_payload_bytes': None if recv_payload_bytes is None else int(recv_payload_bytes)
                         })
-                        self.action_received.set()
+                        if self.execution_mode != 'naive_async':
+                            self.action_received.set()
                     elif data.get('type') == 'action_sequence':
                         # 接收动作序列
                         actions = np.array(data.get('actions'), dtype=np.float32)
@@ -1380,23 +1773,31 @@ class PolymetisInferenceClient:
                             downlink_latency_ms = (
                                 int(received_timestamp_ns) + int(self.clock_offset_ns) - int(server_chunk_send_timestamp_ns)
                             ) / 1e6
-                        
+
+                        chunk_id = int(raw_chunk_id) if raw_chunk_id is not None else self.actions_received
+                        response_entry = {
+                            'chunk_id': chunk_id,
+                            'obs_seq': None if data.get('obs_seq') is None else int(data.get('obs_seq')),
+                            'action': actions,
+                            'received_time': received_time,
+                            'received_timestamp_ns': int(received_timestamp_ns),
+                            'server_chunk_send_timestamp_ns': None if server_chunk_send_timestamp_ns is None else int(server_chunk_send_timestamp_ns),
+                            'downlink_latency_ms': downlink_latency_ms,
+                            'recv_payload_bytes': None if recv_payload_bytes is None else int(recv_payload_bytes),
+                        }
+
                         with self.data_lock:
-                            chunk_id = int(raw_chunk_id) if raw_chunk_id is not None else self.actions_received
-                            self.pending_action_chunks.append({
-                                'chunk_id': chunk_id,
-                                'action': actions,
-                                'received_time': received_time,
-                                'received_timestamp_ns': int(received_timestamp_ns),
-                                'server_chunk_send_timestamp_ns': None if server_chunk_send_timestamp_ns is None else int(server_chunk_send_timestamp_ns),
-                                'downlink_latency_ms': downlink_latency_ms,
-                                'recv_payload_bytes': None if recv_payload_bytes is None else int(recv_payload_bytes)
-                            })
+                            if self.execution_mode == 'naive_async':
+                                self.pending_action_responses.append(dict(response_entry))
+                                self.action_response_event.set()
+                            else:
+                                self.pending_action_chunks.append(dict(response_entry))
                             self.actions_received += 1
                         self._set_pending_chunk_receipt_ack(chunk_id, received_timestamp_ns)
                         self.trajectory_log['actions'].append({
                             'step': chunk_id,
                             'chunk_id': chunk_id,
+                            'obs_seq': None if data.get('obs_seq') is None else int(data.get('obs_seq')),
                             'actions': actions.tolist(),
                             'shape': list(actions.shape),
                             'received_time': received_time,
@@ -1405,7 +1806,8 @@ class PolymetisInferenceClient:
                             'downlink_latency_ms': downlink_latency_ms,
                             'recv_payload_bytes': None if recv_payload_bytes is None else int(recv_payload_bytes)
                         })
-                        self.action_received.set()
+                        if self.execution_mode != 'naive_async':
+                            self.action_received.set()
                         print(f"[客户端] 收到动作序列: chunk_id={chunk_id}, shape={actions.shape}")
             except Exception as e:
                 if self.running:
@@ -1413,6 +1815,10 @@ class PolymetisInferenceClient:
 
     def _inference_loop(self):
         """推理循环"""
+        if self.execution_mode == 'naive_async':
+            self._run_naive_async_loop()
+            return
+
         dt = self.inference_interval
         print(f"[客户端] 推理循环已启动")
         print(f"  基础频率: {1/dt:.1f}Hz (dt={dt:.3f}s)")
@@ -1749,6 +2155,7 @@ class PolymetisInferenceClient:
         self.running = False
         self.arrival_event.set()
         self.action_received.set()
+        self.action_response_event.set()
         
         if self.control_thread and self.control_thread.is_alive():
             self.control_thread.join(timeout=2.0)
