@@ -5,6 +5,7 @@ from collections.abc import Sequence
 import dataclasses
 import difflib
 import logging
+import os
 import pathlib
 from typing import Any, Literal, Protocol, TypeAlias
 
@@ -32,6 +33,16 @@ import openpi.transforms as _transforms
 ModelType: TypeAlias = _model.ModelType
 # Work around a tyro issue with using nnx.filterlib.Filter directly.
 Filter: TypeAlias = nnx.filterlib.Filter
+
+
+LOCAL_PI05_BASE_LORA_PARAMS = os.environ.get(
+    "OPENPI_PI05_BASE_LORA_PARAMS",
+    "/data1/vla-data/openpi/openpi-assets/checkpoints/pi05_base/params",
+)
+LOCAL_PI05_BASE_PYTORCH_DIR = os.environ.get(
+    "OPENPI_PI05_BASE_PYTORCH_DIR",
+    "/data1/vla-data/openpi/openpi-assets/checkpoints/pi05_base_pytorch",
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -989,9 +1000,7 @@ _CONFIGS = [
         optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
         ema_decay=0.999,  # JAX支持EMA
         # 使用JAX权重加载器
-        weight_loader=weight_loaders.CheckpointWeightLoader(
-            "/data3/yinmenghao/code/openpi/local_model/pi05_base_lora/params"
-        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader(LOCAL_PI05_BASE_LORA_PARAMS),
         num_train_steps=20000,  # 设置为20000训练步数
         fsdp_devices=1,  # 使用1个GPU进行训练
         freeze_filter=pi0_config.Pi0Config(
@@ -1024,7 +1033,7 @@ _CONFIGS = [
         optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
         ema_decay=None,  # PyTorch 不支持 EMA
         # 使用PyTorch权重路径
-        pytorch_weight_path="/data3/yinmenghao/code/openpi/local_model/pi05_base_full",
+        pytorch_weight_path=LOCAL_PI05_BASE_PYTORCH_DIR,
         num_train_steps=20000,  # 设置为20000训练步数
         fsdp_devices=8,  # 使用6个GPU进行训练
         freeze_filter=None,  # 全参量训练, 不需要冻结过滤器
@@ -1052,7 +1061,7 @@ _CONFIGS = [
         optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
         ema_decay=None,  # PyTorch 不支持 EMA
         # 使用PyTorch权重路径
-        pytorch_weight_path="/data3/yinmenghao/code/openpi/local_model/pi05_base_full",
+        pytorch_weight_path=LOCAL_PI05_BASE_PYTORCH_DIR,
         num_train_steps=20000,  # 设置为20000训练步数
         fsdp_devices=8,  # 使用8个GPU进行训练
         freeze_filter=None,  # 全参量训练, 不需要冻结过滤器
@@ -1085,9 +1094,7 @@ _CONFIGS = [
         ),
         optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
         ema_decay=0.999,
-        weight_loader=weight_loaders.CheckpointWeightLoader(
-            "/data3/yinmenghao/code/openpi/local_model/pi05_base_lora/params"
-        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader(LOCAL_PI05_BASE_LORA_PARAMS),
         num_train_steps=20000,
         fsdp_devices=1,
         freeze_filter=pi0_config.Pi0Config(
@@ -1120,7 +1127,7 @@ _CONFIGS = [
         ),
         optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
         ema_decay=None,
-        pytorch_weight_path="/data3/yinmenghao/code/openpi/local_model/pi05_base_full",
+        pytorch_weight_path=LOCAL_PI05_BASE_PYTORCH_DIR,
         num_train_steps=20000,
         fsdp_devices=8,
         freeze_filter=None,
@@ -1151,9 +1158,7 @@ _CONFIGS = [
         ),
         optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
         ema_decay=0.999,
-        weight_loader=weight_loaders.CheckpointWeightLoader(
-            "/data3/yinmenghao/code/openpi/local_model/pi05_base_lora/params"
-        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader(LOCAL_PI05_BASE_LORA_PARAMS),
         num_train_steps=20000,
         fsdp_devices=1,
         freeze_filter=pi0_config.Pi0Config(
@@ -1189,9 +1194,7 @@ _CONFIGS = [
         ),
         optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
         ema_decay=0.999,
-        weight_loader=weight_loaders.CheckpointWeightLoader(
-            "/data3/yinmenghao/code/openpi/local_model/pi05_base_lora/params"
-        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader(LOCAL_PI05_BASE_LORA_PARAMS),
         num_train_steps=20000,
         fsdp_devices=1,
         freeze_filter=pi0_config.Pi0Config(
