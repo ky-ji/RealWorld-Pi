@@ -19,6 +19,52 @@ import os
 REALWORLD_PI_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CHECKPOINT_ROOT = REALWORLD_PI_ROOT / "checkpoints"
 
+
+def _checkpoint_root_candidates() -> list[Path]:
+    candidates: list[Path] = []
+    env_root = os.environ.get("OPENPI_CHECKPOINT_ROOT")
+    if env_root:
+        candidates.append(Path(env_root).expanduser())
+    candidates.extend(
+        [
+            DEFAULT_CHECKPOINT_ROOT,
+            Path("/data1/public/openpi/checkpoints/realworld-pi05"),
+        ]
+    )
+    unique_candidates: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.expanduser()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        unique_candidates.append(resolved)
+    return unique_candidates
+
+
+def _default_checkpoint_relpath(config_name: str) -> Path:
+    mapping = {
+        "pi05_stack_bowls_lora": Path(
+            "stack_bowls_lora_0208/pi05_stack_bowls_lora/stack_bowls_lora_v2/29999"
+        ),
+        "pi05_place_phone_lora": Path(
+            "place_phone_lora_0211/pi05_place_phone_lora/place_phone_lora_v2/19999"
+        ),
+        "pi05_assembly_things_lora": Path(
+            "assembly_things_lora_0209/pi05_assembly_things_lora/assembly_things_lora_v1/14999"
+        ),
+    }
+    return mapping[config_name]
+
+
+def _resolve_default_checkpoint_dir(config_name: str) -> Path:
+    relpath = _default_checkpoint_relpath(config_name)
+    for root in _checkpoint_root_candidates():
+        candidate = root / relpath
+        if candidate.exists():
+            return candidate
+    return _checkpoint_root_candidates()[0] / relpath
+
 # =============================================================================
 # 服务器配置
 # =============================================================================
@@ -35,13 +81,10 @@ CONFIG_NAME = "pi05_stack_bowls_lora"
 #CONFIG_NAME = "pi05_assembly_things_lora" 
 #CONFIG_NAME = "pi05_place_phone_lora"
 
-# OpenPI checkpoint 目录（包含 params/, train_state/, assets/ 等）
-#CHECKPOINT_DIR = str(DEFAULT_CHECKPOINT_ROOT / "assembly_things_lora_0209" / "pi05_assembly_things_lora" / "assembly_things_lora_v1" / "14999")
 CHECKPOINT_DIR = os.environ.get(
     "OPENPI_CHECKPOINT_DIR",
-    str(DEFAULT_CHECKPOINT_ROOT / "stack_bowls_lora_0208" / "pi05_stack_bowls_lora" / "stack_bowls_lora_v2" / "29999"),
+    str(_resolve_default_checkpoint_dir(CONFIG_NAME)),
 )
-#CHECKPOINT_DIR = str(DEFAULT_CHECKPOINT_ROOT / "place_phone_lora_0211" / "pi05_place_phone_lora" / "place_phone_lora_v2" / "19999")
 # 推理设备（用于 PyTorch 模型加载，JAX 模型自动选择）
 DEVICE = "cuda"
 

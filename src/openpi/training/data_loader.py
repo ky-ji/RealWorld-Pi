@@ -2,6 +2,7 @@ from collections.abc import Iterator, Sequence
 import logging
 import multiprocessing
 import os
+import pathlib
 import typing
 from typing import Literal, Protocol, SupportsIndex, TypeVar
 
@@ -17,6 +18,29 @@ from openpi.training.droid_rlds_dataset import DroidRldsDataset
 import openpi.transforms as _transforms
 
 T_co = TypeVar("T_co", covariant=True)
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
+
+
+def _local_lerobot_data_roots() -> list[str]:
+    env_roots = os.environ.get("OPENPI_LOCAL_DATA_ROOTS", "")
+    candidates: list[pathlib.Path] = []
+    if env_roots:
+        candidates.extend(pathlib.Path(root).expanduser() for root in env_roots.split(os.pathsep) if root)
+    candidates.extend(
+        [
+            REPO_ROOT / "data",
+            pathlib.Path("/data1/vla-data/processed/PI/data"),
+        ]
+    )
+    unique_roots: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        candidate_str = str(candidate)
+        if candidate_str in seen:
+            continue
+        seen.add(candidate_str)
+        unique_roots.append(candidate_str)
+    return unique_roots
 
 
 class Dataset(Protocol[T_co]):
@@ -139,10 +163,7 @@ def create_torch_dataset(
 
     # Check if repo_id is a local path -- try multiple base directories
     local_data_path = None
-    for base_dir in [
-        "/data3/yinmenghao/code/openpi/data",
-        "/data1/vla-data/processed/PI/data",
-    ]:
+    for base_dir in _local_lerobot_data_roots():
         candidate = os.path.join(base_dir, repo_id)
         if os.path.exists(candidate):
             local_data_path = candidate
