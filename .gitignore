@@ -12,6 +12,7 @@ third_party/
 realworld_deploy/server/time_recordings/*.json
 wandb/
 assets/
+proprioception/artifacts/
 *.log
 train_log.txt
 

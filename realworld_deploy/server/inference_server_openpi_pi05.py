@@ -1,253 +1,193 @@
 #!/usr/bin/env python3
 """
-OpenPI Pi0.5 推理服务器
+OpenPI Pi0.5 真机推理服务器
 
-使用 OpenPI 仓库的标准推理管线 (policy_config.create_trained_policy)，
-仅支持增量 (delta) 模式，动作空间为 7D 轴角格式 [x, y, z, ax, ay, az, gripper]。
-
-与 RealWorld-DP 的 inference_client.py 兼容：
-- 协议：TCP socket + JSON Lines
-- 消息类型：reset / observation → action
-
-支持 VLA-Lab 统一日志格式（可选启用）
-
-数据格式：
-  - OpenPI 模型使用 7D 轴角格式: [x, y, z, ax, ay, az, gripper]
-  - 客户端发送 8D 四元数格式: [x, y, z, qx, qy, qz, qw] + [gripper] (XYZW 标准顺序)
-  - 服务器内部进行 四元数 XYZW ↔ 轴角 的自动转换
-
-推理流程：
-  1. 接收客户端的图像和 8D 四元数状态
-  2. 转换为 7D 轴角格式 (axis-angle)
-  3. 调用 OpenPI policy.infer() 获得 action chunk（绝对目标位置，已由 AbsoluteActions 转换）
-  4. 截断到 TARGET_CHUNK_SIZE
-  5. 可选: 动作放大、安全限制、平滑
-  6. 转换回 8D 四元数格式发送给客户端
-
-使用示例（需要使用 openpi 仓库的 uv 虚拟环境）：
-  # 使用默认配置启动
-  CUDA_VISIBLE_DEVICES=4 /home/yinmenghao/code/openpi/.venv/bin/python \
-      /home/yinmenghao/code/openpi/realworld_deploy/server/inference_server_openpi_pi05.py
-
-  # 或使用 uv run 启动
-  cd /home/yinmenghao/code/openpi && CUDA_VISIBLE_DEVICES=3 uv run \
-      realworld_deploy/server/inference_server_openpi_pi05.py
-
-  # 指定参数
-  CUDA_VISIBLE_DEVICES=3 /home/yinmenghao/code/openpi/.venv/bin/python \
-      /home/yinmenghao/code/openpi/realworld_deploy/server/inference_server_openpi_pi05.py \
-      --checkpoint_dir /home/yinmenghao/code/openpi/checkpoints/stack_bowls_lora_0208/pi05_stack_bowls_lora/stack_bowls_lora_v1/19999 \
-      --config_name pi05_stack_bowls_lora \
-      --prompt "stack the bowls" \
-      --port 8007
+职责拆分：
+1. 沿用 CosmosVLA 的双端口 ZeroMQ + 二进制协议传输层
+2. 保留 Pi/OpenPI 的推理语义：
+   - 服务端内部使用 7D 轴角状态/动作
+   - 客户端与机器人侧继续使用 8D 四元数 XYZW 动作
+3. 在发送前执行安全限幅、平滑和四元数连续性处理
 """
 
-import socket
-import json
-import numpy as np
-import cv2
+from __future__ import annotations
+
 import base64
-import time
+import json
 import os
 import sys
-from pathlib import Path
+import time
 from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
-# =============================================================================
-# 路径设置: 确保 openpi 包可导入
-# =============================================================================
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-REPO_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "..", ".."))
-SRC_DIR = os.path.join(REPO_ROOT, "src")
-if SRC_DIR not in sys.path:
-    sys.path.insert(0, SRC_DIR)
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
-
-from server_config_openpi_pi05 import (
-    SERVER_IP, SERVER_PORT, CONFIG_NAME, CHECKPOINT_DIR, DEVICE,
-    NUM_IMAGES, ACTION_DIM, TASK_PROMPT,
-    INFERENCE_FREQ, TARGET_CHUNK_SIZE,
-    ACTION_AMPLIFY_POS, ACTION_AMPLIFY_ROT,
-    ENABLE_ACTION_LIMIT, MAX_POS_DELTA_PER_STEP, MAX_ROT_DELTA_PER_STEP,
-    MAX_POS_ACCELERATION, MAX_ROT_ACCELERATION,
-    SMOOTH_START_STEPS, ACTION_SMOOTHING_ALPHA, SAFE_WORKSPACE,
-    GRIPPER_CHUNK_CONSISTENCY, GRIPPER_THRESHOLD,
-    SOCKET_TIMEOUT, BUFFER_SIZE, ENCODING, MAX_CLIENTS, VERBOSE,
-)
-
+import cv2
+import numpy as np
+import zmq
 from scipy.spatial.transform import Rotation as R
 
 
-# =============================================================================
-# 坐标转换工具函数 (四元数 XYZW ↔ 轴角 axis-angle)
-# =============================================================================
+CURRENT_DIR = Path(__file__).resolve().parent
+REALWORLD_DEPLOY_DIR = CURRENT_DIR.parent
+REALWORLD_PI_ROOT = REALWORLD_DEPLOY_DIR.parent
+WORKSPACE_ROOT = REALWORLD_PI_ROOT.parent
+ROBOT_INFERENCE_DIR = REALWORLD_DEPLOY_DIR / "robot_inference"
+CONFIG_DIR = ROBOT_INFERENCE_DIR / "configs"
+OPENPI_ROOT = WORKSPACE_ROOT / "openpi"
+OPENPI_SRC_DIR = OPENPI_ROOT / "src"
 
-def quaternion_xyzw_to_axisangle(quat_xyzw):
-    """
-    将四元数 [qx, qy, qz, qw] (XYZW 标准顺序) 转换为轴角 [ax, ay, az]
+for path in (CURRENT_DIR, ROBOT_INFERENCE_DIR, CONFIG_DIR, OPENPI_SRC_DIR, OPENPI_ROOT):
+    path_str = str(path)
+    if path.exists() and path_str not in sys.path:
+        sys.path.insert(0, path_str)
 
-    Args:
-        quat_xyzw: 四元数 [qx, qy, qz, qw]
+from server_config_openpi_pi05 import (  # noqa: E402
+    SERVER_IP,
+    SERVER_PORT,
+    OBSERVATION_PORT,
+    ACTION_PORT,
+    CONFIG_NAME,
+    CHECKPOINT_DIR,
+    DEVICE,
+    NUM_IMAGES,
+    ACTION_DIM,
+    TASK_PROMPT,
+    INFERENCE_FREQ,
+    TARGET_CHUNK_SIZE,
+    ACTION_AMPLIFY_POS,
+    ACTION_AMPLIFY_ROT,
+    ENABLE_ACTION_LIMIT,
+    MAX_POS_DELTA_PER_STEP,
+    MAX_ROT_DELTA_PER_STEP,
+    MAX_POS_ACCELERATION,
+    MAX_ROT_ACCELERATION,
+    SMOOTH_START_STEPS,
+    ACTION_SMOOTHING_ALPHA,
+    SAFE_WORKSPACE,
+    GRIPPER_CHUNK_CONSISTENCY,
+    GRIPPER_THRESHOLD,
+    SOCKET_TIMEOUT,
+    MAX_CLIENTS,
+    VERBOSE,
+)
 
-    Returns:
-        轴角向量 [ax, ay, az] (弧度)
-    """
-    r = R.from_quat(quat_xyzw)
-    return r.as_rotvec()
-
-
-def canonicalize_quaternion_xyzw(quat_xyzw, prev_quat_xyzw=None):
-    """
-    规范化四元数半球，避免 q 与 -q 抖动导致的表示不连续。
-
-    规则：
-      1) 若有上一帧四元数，优先与上一帧同半球（dot >= 0）
-      2) 首帧无参考时，强制 qw >= 0，保证确定性
-    """
-    q = np.asarray(quat_xyzw, dtype=np.float32).copy()
-    norm = np.linalg.norm(q)
-    if norm < 1e-8:
-        return np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float32)
-    q /= norm
-
-    if prev_quat_xyzw is not None:
-        prev = np.asarray(prev_quat_xyzw, dtype=np.float32)
-        prev_norm = np.linalg.norm(prev)
-        if prev_norm > 1e-8:
-            prev = prev / prev_norm
-            if float(np.dot(q, prev)) < 0.0:
-                q = -q
-            return q
-
-    # 无参考时使用确定性规则，减少首帧随机半球抖动
-    if q[3] < 0:
-        q = -q
-    return q
-
-
-# 训练数据 009_place_phone 的 rotvec 均值，用于首帧分支选择参考
-_TRAIN_ROTVEC_MEAN = np.array([1.88379622, -0.88216197, -0.15260544], dtype=np.float32)
+import tcp_binary_protocol as binary_proto  # noqa: E402
 
 
-def canonicalize_axisangle_equivalent(axisangle, prev_axisangle=None):
-    """
-    选择轴角的等价表示，降低接近 pi 区域的分支跳变。
-
-    rotvec 的等价表示之一：
-      v = theta * u
-      v' = -(2*pi - theta) * u
-    当 theta 接近 pi 时，v 与 v' 都可能出现；这里优先选与上一帧更接近的分支。
-
-    首帧无参考时，使用训练数据的 rotvec 均值作为参考，
-    避免 180° 附近落入与训练分布相反的分支。
-    """
-    v = np.asarray(axisangle, dtype=np.float32)
-    theta = float(np.linalg.norm(v))
-    if theta < 1e-8:
-        return v
-
-    # scipy as_rotvec 的 theta 默认在 [0, pi]
-    u = v / theta
-    v_equiv = (-(2.0 * np.pi - theta) * u).astype(np.float32)
-
-    if prev_axisangle is None:
-        # 首帧无参考时，使用训练数据的 rotvec 均值作为参考
-        # 训练数据 009_place_phone 的 state mean (ax, ay, az)
-        ref = _TRAIN_ROTVEC_MEAN
-    else:
-        ref = np.asarray(prev_axisangle, dtype=np.float32)
-
-    d_main = np.linalg.norm(v - ref)
-    d_equiv = np.linalg.norm(v_equiv - ref)
-    return v_equiv if d_equiv < d_main else v
-
-
-def axisangle_to_quaternion_xyzw(axisangle):
-    """
-    将轴角 [ax, ay, az] 转换为四元数 [qx, qy, qz, qw] (XYZW 标准顺序)
-
-    Args:
-        axisangle: 轴角向量 [ax, ay, az] (弧度)
-
-    Returns:
-        四元数 [qx, qy, qz, qw]
-    """
-    r = R.from_rotvec(axisangle)
-    return r.as_quat()
-
-
-def pose8_xyzw_to_state7_axisangle(
-    pose8_xyzw,
-    verbose=False,
-    prev_quat_xyzw=None,
-    prev_axisangle=None,
-):
-    """
-    将客户端的 8D 四元数格式转换为 7D 轴角格式
-
-    Args:
-        pose8_xyzw: [x, y, z, qx, qy, qz, qw, gripper] (8D, XYZW 标准顺序)
-        verbose: 是否打印调试信息
-
-    Returns:
-        state7_aa: [x, y, z, ax, ay, az, gripper] (7D, 轴角格式)
-    """
-    pos = pose8_xyzw[:3]
-    quat_xyzw = pose8_xyzw[3:7]
-    gripper = pose8_xyzw[7]
-
-    quat_xyzw = canonicalize_quaternion_xyzw(quat_xyzw, prev_quat_xyzw=prev_quat_xyzw)
-    axisangle = quaternion_xyzw_to_axisangle(quat_xyzw)
-    axisangle = canonicalize_axisangle_equivalent(axisangle, prev_axisangle=prev_axisangle)
-
-    state7 = np.concatenate([pos, axisangle, [gripper]]).astype(np.float32)
-
-    if verbose:
-        angle_deg = np.degrees(np.linalg.norm(axisangle))
-        print(f"  四元数 XYZW: [{quat_xyzw[0]:.4f}, {quat_xyzw[1]:.4f}, {quat_xyzw[2]:.4f}, {quat_xyzw[3]:.4f}]")
-        print(f"  轴角: [{axisangle[0]:.4f}, {axisangle[1]:.4f}, {axisangle[2]:.4f}] (角度: {angle_deg:.1f}°)")
-
-    return state7
-
-
-def action7_axisangle_to_pose8_xyzw(action7_aa):
-    """
-    将模型输出的 7D 轴角格式转换为 8D 四元数格式
-
-    Args:
-        action7_aa: [x, y, z, ax, ay, az, gripper] (7D, 轴角格式)
-
-    Returns:
-        pose8_xyzw: [x, y, z, qx, qy, qz, qw, gripper] (8D, XYZW 标准顺序)
-    """
-    pos = action7_aa[:3]
-    axisangle = action7_aa[3:6]
-    gripper = action7_aa[6]
-
-    quat_xyzw = axisangle_to_quaternion_xyzw(axisangle)
-
-    pose8 = np.concatenate([pos, quat_xyzw, [gripper]]).astype(np.float32)
-    return pose8
-
-
-# =============================================================================
-# VLA-Lab 集成（自动启用：安装即生效，设置 VLALAB_DISABLED=1 可禁用）
-# =============================================================================
 try:
     import vlalab
+
     VLALAB_AVAILABLE = os.environ.get("VLALAB_DISABLED", "").lower() not in ("1", "true", "yes")
 except ImportError:
     VLALAB_AVAILABLE = False
     vlalab = None
 
 
-# =============================================================================
-# 推理服务器
-# =============================================================================
+CLIENT_SERVER_CLOCK_OFFSET_NS = 875000
+
+
+def _decode_transport_image_bytes(image_payload) -> np.ndarray:
+    if isinstance(image_payload, str):
+        img_data = base64.b64decode(image_payload)
+    else:
+        img_data = bytes(image_payload)
+    img_array = np.frombuffer(img_data, dtype=np.uint8)
+    image_bgr = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+    if image_bgr is None:
+        raise ValueError("failed to decode image payload")
+    return cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+
+
+def quaternion_xyzw_to_axisangle(quat_xyzw: np.ndarray) -> np.ndarray:
+    return R.from_quat(quat_xyzw).as_rotvec().astype(np.float32)
+
+
+def canonicalize_quaternion_xyzw(
+    quat_xyzw: np.ndarray,
+    prev_quat_xyzw: Optional[np.ndarray] = None,
+) -> np.ndarray:
+    q = np.asarray(quat_xyzw, dtype=np.float32).reshape(4).copy()
+    norm = float(np.linalg.norm(q))
+    if not np.isfinite(norm) or norm < 1e-8:
+        return np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float32)
+    q /= norm
+
+    if prev_quat_xyzw is not None:
+        prev = np.asarray(prev_quat_xyzw, dtype=np.float32).reshape(4).copy()
+        prev_norm = float(np.linalg.norm(prev))
+        if np.isfinite(prev_norm) and prev_norm > 1e-8:
+            prev /= prev_norm
+            if float(np.dot(q, prev)) < 0.0:
+                q = -q
+            return q.astype(np.float32)
+
+    if q[3] < 0.0:
+        q = -q
+    return q.astype(np.float32)
+
+
+_TRAIN_ROTVEC_MEAN = np.array([1.88379622, -0.88216197, -0.15260544], dtype=np.float32)
+
+
+def canonicalize_axisangle_equivalent(
+    axisangle: np.ndarray,
+    prev_axisangle: Optional[np.ndarray] = None,
+) -> np.ndarray:
+    v = np.asarray(axisangle, dtype=np.float32).reshape(3)
+    theta = float(np.linalg.norm(v))
+    if not np.isfinite(theta) or theta < 1e-8:
+        return v.astype(np.float32)
+
+    u = v / theta
+    v_equiv = (-(2.0 * np.pi - theta) * u).astype(np.float32)
+    ref = _TRAIN_ROTVEC_MEAN if prev_axisangle is None else np.asarray(prev_axisangle, dtype=np.float32).reshape(3)
+
+    d_main = float(np.linalg.norm(v - ref))
+    d_equiv = float(np.linalg.norm(v_equiv - ref))
+    return v_equiv if d_equiv < d_main else v.astype(np.float32)
+
+
+def axisangle_to_quaternion_xyzw(axisangle: np.ndarray) -> np.ndarray:
+    return R.from_rotvec(axisangle).as_quat().astype(np.float32)
+
+
+def pose8_xyzw_to_state7_axisangle(
+    pose8_xyzw: np.ndarray,
+    verbose: bool = False,
+    prev_quat_xyzw: Optional[np.ndarray] = None,
+    prev_axisangle: Optional[np.ndarray] = None,
+) -> np.ndarray:
+    pose8_xyzw = np.asarray(pose8_xyzw, dtype=np.float32).reshape(8)
+    pos = pose8_xyzw[:3]
+    quat_xyzw = canonicalize_quaternion_xyzw(pose8_xyzw[3:7], prev_quat_xyzw=prev_quat_xyzw)
+    gripper = float(pose8_xyzw[7])
+
+    axisangle = quaternion_xyzw_to_axisangle(quat_xyzw)
+    axisangle = canonicalize_axisangle_equivalent(axisangle, prev_axisangle=prev_axisangle)
+
+    state7 = np.concatenate([pos, axisangle, np.array([gripper], dtype=np.float32)], axis=0).astype(np.float32)
+
+    if verbose:
+        angle_deg = np.degrees(float(np.linalg.norm(axisangle)))
+        print(
+            "[OpenPI Pi0.5 推理服务器] 首帧状态转换: "
+            f"quat_xyzw={quat_xyzw.tolist()} axisangle={axisangle.tolist()} angle_deg={angle_deg:.1f}"
+        )
+
+    return state7
+
+
+def action7_axisangle_to_pose8_xyzw(action7_aa: np.ndarray) -> np.ndarray:
+    action7_aa = np.asarray(action7_aa, dtype=np.float32).reshape(7)
+    pos = action7_aa[:3]
+    axisangle = action7_aa[3:6]
+    gripper = float(action7_aa[6])
+    quat_xyzw = axisangle_to_quaternion_xyzw(axisangle)
+    return np.concatenate([pos, quat_xyzw, np.array([gripper], dtype=np.float32)], axis=0).astype(np.float32)
+
 
 class OpenPiPi05InferenceServer:
-    """OpenPI Pi0.5 推理服务器 (增量轴角模式)"""
+    """OpenPI Pi0.5 推理服务器。"""
 
     def __init__(
         self,
@@ -258,6 +198,8 @@ class OpenPiPi05InferenceServer:
         inference_freq: float = INFERENCE_FREQ,
         server_ip: str = SERVER_IP,
         server_port: int = SERVER_PORT,
+        observation_port: int = OBSERVATION_PORT,
+        action_port: int = ACTION_PORT,
         max_clients: int = MAX_CLIENTS,
         verbose: bool = VERBOSE,
     ):
@@ -265,16 +207,37 @@ class OpenPiPi05InferenceServer:
         self.checkpoint_dir = checkpoint_dir
         self.device = device
         self.task_prompt = task_prompt
-        self.inference_freq = inference_freq
+        self.inference_freq = float(inference_freq)
         self.server_ip = server_ip
-        self.server_port = server_port
-        self.max_clients = max_clients
-        self.verbose = verbose
+        self.server_port = int(server_port)
+        self.observation_port = int(observation_port)
+        self.action_port = int(action_port)
+        self.max_clients = int(max_clients)
+        self.verbose = bool(verbose)
+
+        self.num_images = int(NUM_IMAGES)
+        self.action_dim = int(ACTION_DIM)
+        self.target_chunk_size = int(TARGET_CHUNK_SIZE)
+        self.action_amplify_pos = float(ACTION_AMPLIFY_POS)
+        self.action_amplify_rot = float(ACTION_AMPLIFY_ROT)
+        self.enable_action_limit = bool(ENABLE_ACTION_LIMIT)
+        self.max_pos_delta_per_step = None if MAX_POS_DELTA_PER_STEP is None else float(MAX_POS_DELTA_PER_STEP)
+        self.max_rot_delta_per_step = None if MAX_ROT_DELTA_PER_STEP is None else float(MAX_ROT_DELTA_PER_STEP)
+        self.max_pos_acceleration = None if MAX_POS_ACCELERATION is None else float(MAX_POS_ACCELERATION)
+        self.max_rot_acceleration = None if MAX_ROT_ACCELERATION is None else float(MAX_ROT_ACCELERATION)
+        self.smooth_start_steps = max(0, int(SMOOTH_START_STEPS))
+        self.action_smoothing_alpha = float(ACTION_SMOOTHING_ALPHA)
+        self.safe_workspace = SAFE_WORKSPACE
+        self.gripper_chunk_consistency = bool(GRIPPER_CHUNK_CONSISTENCY)
+        self.gripper_threshold = float(GRIPPER_THRESHOLD)
 
         self.policy = None
         self.running = False
 
-        # Episode 状态
+        self.zmq_context = None
+        self.obs_socket = None
+        self.action_socket = None
+
         self.episode_start_time = None
         self.last_recv_timestamp = None
         self.last_sent_quat = None
@@ -284,44 +247,36 @@ class OpenPiPi05InferenceServer:
         self.episode_step_count = 0
         self._view_mapping_logged = False
 
-        # 动作安全限制状态（跨 chunk 保持）
+        self.clock_offset_ns = int(CLIENT_SERVER_CLOCK_OFFSET_NS)
+        self.next_chunk_id = 0
+        self.chunk_send_timestamps_ns = {}
+        self.chunk_send_complete_timestamps_ns = {}
+        self.chunk_step_indices = {}
+        self.protocol_session_id = 0
+        self.camera_ids = tuple(binary_proto.build_camera_ids(["front_view", "wrist_view"]))
         self.prev_action_chunk = None
 
-        # 轨迹记录
         self.inference_log = {
-            'meta': {
-                'config_name': config_name,
-                'checkpoint_dir': str(checkpoint_dir),
-                'model_type': 'openpi_pi05',
-                'action_format': '7D_axis_angle',
-                'action_type': 'delta (OpenPI AbsoluteActions auto-converts)',
-                'amplify_pos': ACTION_AMPLIFY_POS,
-                'amplify_rot': ACTION_AMPLIFY_ROT,
-                'quaternion_order': 'XYZW (standard)',
-                'start_time': time.strftime("%Y-%m-%d %H:%M:%S")
+            "meta": {
+                "config_name": config_name,
+                "checkpoint_dir": str(checkpoint_dir),
+                "model_type": "openpi_pi05",
+                "action_format": "7D_axis_angle",
+                "quaternion_order": "XYZW",
+                "transport": "zmq_binary_dual_socket",
+                "observation_port": self.observation_port,
+                "action_port": self.action_port,
+                "clock_offset_ns": int(self.clock_offset_ns),
+                "start_time": time.strftime("%Y-%m-%d %H:%M:%S"),
             },
-            'steps': []
+            "steps": [],
         }
 
-        # VLA-Lab 日志
         self.vlalab_run = None
-        self._current_images_b64 = {}  # 用于暂存当前步骤参与推理的图像
-
-        # 时间记录文件夹
-        self.time_recordings_dir = Path(__file__).parent / "time_recordings"
-        self.time_recordings_dir.mkdir(parents=True, exist_ok=True)
-        self.inference_count = 0  # 推理计数
-        self.time_records = []  # 存储所有推理记录
-        # 生成唯一的文件名（启动时生成）
-        self.time_record_filename = f"time_recordings_{datetime.now().strftime('%m%d_%H%M')}.json"
-
         if VLALAB_AVAILABLE:
-            ckpt_name = Path(checkpoint_dir).name[:20]
-            # vlalab_runs 目录创建在 openpi 根目录下
-            openpi_root = Path(__file__).parent.parent.parent
-            vlalab_dir = openpi_root / "vlalab_runs"
+            ckpt_name = Path(checkpoint_dir).name[:24]
+            vlalab_dir = WORKSPACE_ROOT / "vlalab_runs"
             try:
-                # 显式创建目录，避免依赖 vlalab.init 的隐式行为
                 vlalab_dir.mkdir(parents=True, exist_ok=True)
                 self.vlalab_run = vlalab.init(
                     project=f"openpi_pi05_{ckpt_name}",
@@ -330,54 +285,65 @@ class OpenPiPi05InferenceServer:
                         "config_name": config_name,
                         "checkpoint_dir": str(checkpoint_dir),
                         "task_prompt": task_prompt,
-                        "inference_freq": inference_freq,
-                        "action_dim": ACTION_DIM,
-                        "num_images": NUM_IMAGES,
-                        "action_type": "delta",
+                        "inference_freq": self.inference_freq,
                     },
                     dir=str(vlalab_dir),
                 )
-                print(f"[OpenPI Pi0.5 推理服务器] VLA-Lab 已启用，日志目录: {vlalab_dir}")
-            except Exception as e:
+                print(f"[OpenPI Pi0.5 推理服务器] VLA-Lab 已启用: {vlalab_dir}")
+            except Exception as exc:
                 self.vlalab_run = None
-                print(f"[OpenPI Pi0.5 推理服务器] VLA-Lab 初始化失败，已禁用: {e}")
-        else:
-            if vlalab is None:
-                print("[OpenPI Pi0.5 推理服务器] VLA-Lab 未安装，跳过日志记录")
-            else:
-                print("[OpenPI Pi0.5 推理服务器] VLA-Lab 已被环境变量 VLALAB_DISABLED 禁用")
+                print(f"[OpenPI Pi0.5 推理服务器] VLA-Lab 初始化失败，已禁用: {exc}")
 
         print("[OpenPI Pi0.5 推理服务器] 初始化...")
-        print(f"[OpenPI Pi0.5 推理服务器] 动作格式: 7D 轴角 [x, y, z, ax, ay, az, gripper]")
-        print(f"[OpenPI Pi0.5 推理服务器] 四元数顺序: XYZW (标准顺序)")
-        print(f"[OpenPI Pi0.5 推理服务器] 动作类型: 增量 (delta) - OpenPI 内部自动转换为绝对量")
-        print(f"[OpenPI Pi0.5 推理服务器] 训练配置: {config_name}")
-        print(f"[OpenPI Pi0.5 推理服务器] Checkpoint: {checkpoint_dir}")
-        print(f"[OpenPI Pi0.5 推理服务器] chunk_size={TARGET_CHUNK_SIZE}")
-        print(f"[OpenPI Pi0.5 推理服务器] amplify_pos={ACTION_AMPLIFY_POS}, amplify_rot={ACTION_AMPLIFY_ROT}")
+        print(f"[OpenPI Pi0.5 推理服务器] config_name={self.config_name}")
+        print(f"[OpenPI Pi0.5 推理服务器] checkpoint_dir={self.checkpoint_dir}")
         self._load_policy()
+        print("[OpenPI Pi0.5 推理服务器] 图像解码后端: opencv")
+
+    def _make_observation_endpoint(self) -> str:
+        return f"tcp://{self.server_ip}:{self.observation_port}"
+
+    def _make_action_endpoint(self) -> str:
+        return f"tcp://{self.server_ip}:{self.action_port}"
+
+    def _configure_zmq_socket(self, sock: zmq.Socket):
+        sock.setsockopt(zmq.LINGER, 1000)
+        sock.setsockopt(zmq.SNDTIMEO, max(1, int(SOCKET_TIMEOUT * 1000)))
+        sock.setsockopt(zmq.RCVTIMEO, max(1, int(SOCKET_TIMEOUT * 1000)))
+        sock.setsockopt(zmq.SNDHWM, max(2, self.max_clients * 2))
+        sock.setsockopt(zmq.RCVHWM, max(2, self.max_clients * 2))
+        if hasattr(zmq, "TCP_KEEPALIVE"):
+            sock.setsockopt(zmq.TCP_KEEPALIVE, 1)
+        if hasattr(zmq, "IMMEDIATE"):
+            sock.setsockopt(zmq.IMMEDIATE, 1)
+
+    def _send_payload(self, payload: bytes) -> Tuple[int, int, float]:
+        if self.action_socket is None:
+            raise RuntimeError("action socket is not initialized")
+        send_start_timestamp_ns = time.time_ns()
+        self.action_socket.send(payload, copy=True)
+        send_complete_timestamp_ns = time.time_ns()
+        latency_ms = float((send_complete_timestamp_ns - send_start_timestamp_ns) / 1e6)
+        return int(send_start_timestamp_ns), int(send_complete_timestamp_ns), latency_ms
 
     def _load_policy(self):
-        """使用 OpenPI 标准 API 加载策略"""
-        from openpi.training import config as _config
         from openpi.policies import policy_config
+        from openpi.training import config as openpi_config
 
         print(f"[OpenPI Pi0.5 推理服务器] 加载训练配置: {self.config_name}")
-        train_config = _config.get_config(self.config_name)
+        train_config = openpi_config.get_config(self.config_name)
 
-        print(f"[OpenPI Pi0.5 推理服务器] 加载策略 (checkpoint: {self.checkpoint_dir})...")
+        print(f"[OpenPI Pi0.5 推理服务器] 加载策略: {self.checkpoint_dir}")
         self.policy = policy_config.create_trained_policy(
             train_config,
             self.checkpoint_dir,
             default_prompt=self.task_prompt,
+            pytorch_device=self.device,
         )
         print("[OpenPI Pi0.5 推理服务器] ✓ 策略加载成功")
-
-        # 预热
         self._warmup()
 
     def _warmup(self):
-        """预热模型（首次推理较慢，需要 JIT 编译）"""
         print("[OpenPI Pi0.5 推理服务器] 预热模型...")
         dummy_obs = {
             "observation/front_image": np.zeros((224, 224, 3), dtype=np.uint8),
@@ -385,204 +351,241 @@ class OpenPiPi05InferenceServer:
             "observation/state": np.array([0.55, -0.05, 0.4, 0.0, 0.15, -1.0, 1.0], dtype=np.float32),
             "prompt": self.task_prompt,
         }
-        try:
-            result = self.policy.infer(dummy_obs)
-            actions = result["actions"]
-            print(f"[OpenPI Pi0.5 推理服务器] ✓ 预热完成 (output shape: {actions.shape})")
-        except Exception as e:
-            print(f"[OpenPI Pi0.5 推理服务器] 预热失败: {e}")
-            import traceback
-            traceback.print_exc()
+        result = self.policy.infer(dummy_obs)
+        actions = np.asarray(result["actions"])
+        print(f"[OpenPI Pi0.5 推理服务器] ✓ 预热完成 (output shape: {actions.shape})")
+
+    def _image_payload_to_log_value(self, image_payload) -> str:
+        if isinstance(image_payload, str):
+            return image_payload
+        return base64.b64encode(bytes(image_payload)).decode("utf-8")
+
+    def _canonical_camera_name(self, camera_name: str) -> str:
+        normalized_name = str(camera_name)
+        alias = {
+            "ego_view": "wrist_view",
+            "wrist": "wrist_view",
+            "front": "front_view",
+        }
+        return alias.get(normalized_name, normalized_name)
+
+    def _decode_observation_image_payload(self, image_payload) -> np.ndarray:
+        return _decode_transport_image_bytes(image_payload)
+
+    def _resolve_images_for_model(
+        self,
+        images_payload,
+        desired_keys: List[str],
+    ) -> Tuple[Dict[str, np.ndarray], List[str], List[str], Dict[str, str], List[str]]:
+        decoded_by_source_name: Dict[str, np.ndarray] = {}
+        decoded_by_canonical_name: Dict[str, np.ndarray] = {}
+        canonical_source_name_map: Dict[str, str] = {}
+        received_image_keys: List[str] = []
+
+        if isinstance(images_payload, dict) and len(images_payload) > 0:
+            for cam_name, image_payload in images_payload.items():
+                source_name = str(cam_name)
+                received_image_keys.append(source_name)
+                try:
+                    image = self._decode_observation_image_payload(image_payload)
+                except Exception:
+                    continue
+                decoded_by_source_name[source_name] = image
+                canonical_name = self._canonical_camera_name(source_name)
+                decoded_by_canonical_name[canonical_name] = image
+                canonical_source_name_map[canonical_name] = source_name
+
+        images_for_model: Dict[str, np.ndarray] = {}
+        decoded_image_keys: List[str] = []
+        matched_image_source_keys: Dict[str, str] = {}
+        missing_image_keys: List[str] = []
+
+        for desired_key in desired_keys:
+            if desired_key in decoded_by_source_name:
+                images_for_model[desired_key] = decoded_by_source_name[desired_key]
+                decoded_image_keys.append(desired_key)
+                matched_image_source_keys[desired_key] = desired_key
+                continue
+
+            canonical_key = self._canonical_camera_name(desired_key)
+            if canonical_key in decoded_by_canonical_name:
+                images_for_model[desired_key] = decoded_by_canonical_name[canonical_key]
+                decoded_image_keys.append(desired_key)
+                matched_image_source_keys[desired_key] = canonical_source_name_map.get(canonical_key, canonical_key)
+                continue
+
+            missing_image_keys.append(desired_key)
+
+        self.inference_log["meta"]["image_key_mapping"] = {
+            "received_image_keys": received_image_keys,
+            "decoded_image_keys": decoded_image_keys,
+            "matched_image_source_keys": matched_image_source_keys,
+            "missing_image_keys": missing_image_keys,
+            "model_video_keys": desired_keys,
+        }
+        return (
+            images_for_model,
+            received_image_keys,
+            decoded_image_keys,
+            matched_image_source_keys,
+            missing_image_keys,
+        )
 
     def _limit_and_smooth_action(self, action: np.ndarray, current_state: np.ndarray) -> np.ndarray:
-        """
-        对输出动作进行安全限制和平滑处理
+        action = np.asarray(action, dtype=np.float32).copy()
+        current_state = np.asarray(current_state, dtype=np.float32).reshape(7)
 
-        处理流程:
-          1. 工作空间硬限制
-          2. 缓启动速度缩放
-          3. 逐步速度限制 + 加速度限制
-          4. EMA 跨 chunk 平滑
-        """
-        action = action.copy()
-
-        if not ENABLE_ACTION_LIMIT:
+        if not self.enable_action_limit:
+            self.prev_action_chunk = action.copy()
             return action
 
         n_steps = len(action)
 
-        # --- 1. 工作空间硬限制 ---
-        if SAFE_WORKSPACE:
-            action[:, 0] = np.clip(action[:, 0], SAFE_WORKSPACE['x'][0], SAFE_WORKSPACE['x'][1])
-            action[:, 1] = np.clip(action[:, 1], SAFE_WORKSPACE['y'][0], SAFE_WORKSPACE['y'][1])
-            action[:, 2] = np.clip(action[:, 2], SAFE_WORKSPACE['z'][0], SAFE_WORKSPACE['z'][1])
+        if self.safe_workspace:
+            action[:, 0] = np.clip(action[:, 0], self.safe_workspace["x"][0], self.safe_workspace["x"][1])
+            action[:, 1] = np.clip(action[:, 1], self.safe_workspace["y"][0], self.safe_workspace["y"][1])
+            action[:, 2] = np.clip(action[:, 2], self.safe_workspace["z"][0], self.safe_workspace["z"][1])
 
-        # --- 2. 缓启动: 前 N 步线性缩放速度上限 ---
-        pos_limit = MAX_POS_DELTA_PER_STEP if MAX_POS_DELTA_PER_STEP else 1e9
-        rot_limit = MAX_ROT_DELTA_PER_STEP if MAX_ROT_DELTA_PER_STEP else 1e9
+        pos_limit = self.max_pos_delta_per_step if self.max_pos_delta_per_step else 1e9
+        rot_limit = self.max_rot_delta_per_step if self.max_rot_delta_per_step else 1e9
 
-        if SMOOTH_START_STEPS > 0 and self.episode_step_count < SMOOTH_START_STEPS:
-            scale = 0.1 + (self.episode_step_count / SMOOTH_START_STEPS) * 0.9
+        if self.smooth_start_steps > 0 and self.episode_step_count < self.smooth_start_steps:
+            scale = 0.1 + (self.episode_step_count / self.smooth_start_steps) * 0.9
             pos_limit *= scale
             rot_limit *= scale
             if self.verbose and self.episode_step_count < 5:
-                print(f"[SmoothStart] Step {self.episode_step_count}: scale={scale:.2f}, "
-                      f"max_pos={pos_limit*100:.2f}cm, max_rot={np.degrees(rot_limit):.1f}°")
+                print(
+                    f"[SmoothStart] step={self.episode_step_count} "
+                    f"scale={scale:.2f} max_pos={pos_limit*100:.2f}cm max_rot={np.degrees(rot_limit):.1f}deg"
+                )
 
-        # --- 3. 逐步速度 + 加速度限制 ---
         ref_pos = current_state[:3].copy()
         ref_rot = current_state[3:6].copy()
-        prev_pos_vel = np.zeros(3)
-        prev_rot_vel = np.zeros(3)
+        prev_pos_vel = np.zeros(3, dtype=np.float32)
+        prev_rot_vel = np.zeros(3, dtype=np.float32)
 
         for i in range(n_steps):
-            # ---- 位置 ----
             pos_delta = action[i, :3] - ref_pos
-            pos_speed = np.linalg.norm(pos_delta)
-
+            pos_speed = float(np.linalg.norm(pos_delta))
             if pos_speed > pos_limit:
                 pos_delta = pos_delta * (pos_limit / pos_speed)
-
-            if MAX_POS_ACCELERATION and MAX_POS_ACCELERATION > 0:
+            if self.max_pos_acceleration and self.max_pos_acceleration > 0:
                 acc = pos_delta - prev_pos_vel
-                acc_norm = np.linalg.norm(acc)
-                if acc_norm > MAX_POS_ACCELERATION:
-                    acc = acc * (MAX_POS_ACCELERATION / acc_norm)
+                acc_norm = float(np.linalg.norm(acc))
+                if acc_norm > self.max_pos_acceleration:
+                    acc = acc * (self.max_pos_acceleration / acc_norm)
                     pos_delta = prev_pos_vel + acc
-                    vel_norm = np.linalg.norm(pos_delta)
+                    vel_norm = float(np.linalg.norm(pos_delta))
                     if vel_norm > pos_limit:
                         pos_delta = pos_delta * (pos_limit / vel_norm)
-
             action[i, :3] = ref_pos + pos_delta
             prev_pos_vel = pos_delta.copy()
             ref_pos = action[i, :3].copy()
 
-            # ---- 旋转 (轴角: 直接计算旋转向量差) ----
             rot_delta = action[i, 3:6] - ref_rot
-            rot_speed = np.linalg.norm(rot_delta)
-
+            rot_speed = float(np.linalg.norm(rot_delta))
             if rot_speed > rot_limit:
                 rot_delta = rot_delta * (rot_limit / rot_speed)
-
-            if MAX_ROT_ACCELERATION and MAX_ROT_ACCELERATION > 0:
+            if self.max_rot_acceleration and self.max_rot_acceleration > 0:
                 rot_acc = rot_delta - prev_rot_vel
-                rot_acc_norm = np.linalg.norm(rot_acc)
-                if rot_acc_norm > MAX_ROT_ACCELERATION:
-                    rot_acc = rot_acc * (MAX_ROT_ACCELERATION / rot_acc_norm)
+                rot_acc_norm = float(np.linalg.norm(rot_acc))
+                if rot_acc_norm > self.max_rot_acceleration:
+                    rot_acc = rot_acc * (self.max_rot_acceleration / rot_acc_norm)
                     rot_delta = prev_rot_vel + rot_acc
-                    vel_norm = np.linalg.norm(rot_delta)
+                    vel_norm = float(np.linalg.norm(rot_delta))
                     if vel_norm > rot_limit:
                         rot_delta = rot_delta * (rot_limit / vel_norm)
-
             action[i, 3:6] = ref_rot + rot_delta
             prev_rot_vel = rot_delta.copy()
             ref_rot = action[i, 3:6].copy()
 
-        # --- 4. EMA 跨 chunk 平滑 ---
-        alpha = ACTION_SMOOTHING_ALPHA
+        alpha = self.action_smoothing_alpha
         if alpha > 0 and self.prev_action_chunk is not None:
             prev = self.prev_action_chunk
-            action[0, :6] = alpha * prev[0, :6] + (1 - alpha) * action[0, :6]
+            action[0, :6] = alpha * prev[0, :6] + (1.0 - alpha) * action[0, :6]
             for i in range(1, min(n_steps, 3)):
                 decay = alpha * (0.5 ** i)
                 if i < len(prev):
-                    action[i, :6] = decay * prev[i, :6] + (1 - decay) * action[i, :6]
+                    action[i, :6] = decay * prev[i, :6] + (1.0 - decay) * action[i, :6]
 
         self.prev_action_chunk = action.copy()
-
         return action
 
     def start(self):
-        """启动服务器"""
         try:
-            server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            server_socket.bind((self.server_ip, self.server_port))
-            server_socket.listen(self.max_clients)
+            self.zmq_context = zmq.Context()
+            self.obs_socket = self.zmq_context.socket(zmq.PULL)
+            self.action_socket = self.zmq_context.socket(zmq.PUSH)
+            self._configure_zmq_socket(self.obs_socket)
+            self._configure_zmq_socket(self.action_socket)
+            self.obs_socket.bind(self._make_observation_endpoint())
+            self.action_socket.bind(self._make_action_endpoint())
 
-            print(f"[OpenPI Pi0.5 推理服务器] ✓ 监听 {self.server_ip}:{self.server_port}")
+            poller = zmq.Poller()
+            poller.register(self.obs_socket, zmq.POLLIN)
+
+            print(
+                "[OpenPI Pi0.5 推理服务器] ✓ ZeroMQ 监听 "
+                f"upload={self._make_observation_endpoint()}, download={self._make_action_endpoint()}"
+            )
             print(f"[OpenPI Pi0.5 推理服务器] 任务指令: {self.task_prompt}")
             self.running = True
 
             while self.running:
                 try:
-                    client_socket, client_addr = server_socket.accept()
-                    print(f"[OpenPI Pi0.5 推理服务器] 客户端连接: {client_addr}")
-                    self._handle_client(client_socket, client_addr)
-                except KeyboardInterrupt:
-                    break
-                except Exception as e:
-                    print(f"[OpenPI Pi0.5 推理服务器] 错误: {e}")
-
-            server_socket.close()
-            self._save_inference_log()
-            self._save_all_time_records()
-
-        except Exception as e:
-            print(f"[OpenPI Pi0.5 推理服务器] 启动失败: {e}")
-            import traceback
-            traceback.print_exc()
-
-    def _handle_client(self, client_socket: socket.socket, client_addr: tuple):
-        """处理客户端连接"""
-        try:
-            client_socket.settimeout(SOCKET_TIMEOUT)
-            buffer = b''
-
-            while self.running:
-                try:
-                    data = client_socket.recv(BUFFER_SIZE)
-                    if not data:
-                        break
-                    buffer += data
-                    msgs = []
-                    while b'\n' in buffer:
-                        line, buffer = buffer.split(b'\n', 1)
-                        msg = line.decode(ENCODING).strip()
-                        if msg:
-                            msgs.append(msg)
-
-                    if not msgs:
+                    events = dict(poller.poll(100))
+                    if self.obs_socket not in events:
                         continue
 
-                    recv_timestamp = time.time()
-                    latest_obs_msg = None
-                    skipped = 0
-                    for msg in msgs:
-                        try:
-                            parsed = json.loads(msg)
-                        except Exception:
-                            continue
-                        if parsed.get('type') == 'reset':
-                            self._process_message(client_socket, msg, recv_timestamp)
-                        elif parsed.get('type') == 'observation':
-                            latest_obs_msg = msg
-                            skipped += 1
-
-                    # 仅处理最新观测，丢弃堆积的旧观测
-                    if latest_obs_msg is not None:
-                        if skipped > 1:
-                            self.skipped_obs_count += (skipped - 1)
-                            if self.verbose:
-                                print(f"[OpenPI Pi0.5 推理服务器] 丢弃 {skipped - 1} 个旧观测 (累计 {self.skipped_obs_count})")
-                        self._process_message(client_socket, latest_obs_msg, recv_timestamp)
-
-                except socket.timeout:
-                    continue
-                except Exception as e:
-                    print(f"[OpenPI Pi0.5 推理服务器] 接收错误: {e}")
+                    recv_start_timestamp_ns = time.time_ns()
+                    payload = self.obs_socket.recv(copy=True)
+                    recv_timestamp_ns = time.time_ns()
+                    frames = binary_proto.unpack_framed_payload(payload)
+                    recv_metadata = {
+                        "transport": "zmq",
+                        "recv_start_timestamp_ns": int(recv_start_timestamp_ns),
+                        "header_recv_timestamp_ns": int(recv_timestamp_ns),
+                        "body_recv_timestamp_ns": int(recv_timestamp_ns),
+                        "body_length_bytes": int(len(payload)),
+                        "body_recv_chunk_count": 1,
+                        "body_recv_chunk_sizes_bytes": [int(len(payload))],
+                        "body_recv_chunk_intervals_ns": [],
+                        "payload_bytes": int(len(payload)),
+                        "framed_message_count": len(frames),
+                    }
+                    camera_names = binary_proto.camera_names_from_ids(self.camera_ids)
+                    parsed = binary_proto.decode_message(frames, camera_names=camera_names)
+                    parsed["_recv_payload_bytes"] = int(len(payload))
+                    self._process_message(parsed, recv_timestamp_ns, recv_metadata)
+                except KeyboardInterrupt:
                     break
-            client_socket.close()
-        except Exception as e:
-            print(f"[OpenPI Pi0.5 推理服务器] 客户端错误: {e}")
+                except zmq.Again:
+                    continue
+                except Exception as exc:
+                    print(f"[OpenPI Pi0.5 推理服务器] 循环错误: {exc}")
 
-    def _process_message(self, client_socket: socket.socket, message: str, recv_timestamp: float):
-        """处理消息"""
+        except Exception as exc:
+            print(f"[OpenPI Pi0.5 推理服务器] 启动失败: {exc}")
+            import traceback
+
+            traceback.print_exc()
+        finally:
+            if self.obs_socket is not None:
+                self.obs_socket.close(0)
+                self.obs_socket = None
+            if self.action_socket is not None:
+                self.action_socket.close(0)
+                self.action_socket = None
+            if self.zmq_context is not None:
+                self.zmq_context.term()
+                self.zmq_context = None
+            self._save_inference_log()
+
+    def _process_message(self, data: dict, recv_timestamp_ns: int, recv_metadata: Optional[Dict] = None):
         try:
-            data = json.loads(message)
+            msg_type = data.get("type")
 
-            if data.get('type') == 'reset':
-                # 重置 episode
+            if msg_type == "reset":
                 self.episode_start_time = time.time()
                 self.last_recv_timestamp = None
                 self.last_sent_quat = None
@@ -592,436 +595,453 @@ class OpenPiPi05InferenceServer:
                 self.episode_step_count = 0
                 self._view_mapping_logged = False
                 self.prev_action_chunk = None
-                response = {'type': 'reset_ack'}
-                client_socket.sendall((json.dumps(response) + '\n').encode(ENCODING))
+                self.next_chunk_id = 0
+                self.chunk_send_timestamps_ns = {}
+                self.chunk_send_complete_timestamps_ns = {}
+                self.chunk_step_indices = {}
+                self.protocol_session_id = int(data.get("session_id", 0))
+
+                camera_ids = data.get("camera_ids", [])
+                if camera_ids:
+                    self.camera_ids = tuple(int(camera_id) for camera_id in camera_ids)
+
+                self.inference_log["meta"]["reset_camera_names"] = binary_proto.camera_names_from_ids(self.camera_ids)
+                self.inference_log["meta"].pop("image_key_mapping", None)
+
+                response, _ = binary_proto.encode_reset_ack_message(
+                    session_id=self.protocol_session_id,
+                    clock_offset_ns=self.clock_offset_ns,
+                )
+                self._send_payload(response)
                 if self.verbose:
                     print("[OpenPI Pi0.5 推理服务器] ✓ Episode 重置")
+                return
 
-            elif data.get('type') == 'observation':
-                process_start_time = time.time()
-                self._current_images_b64 = {}
-
-                # 解码数据
-                images_b64 = data.get('images', [])
-                poses_list = data.get('poses', [])
-                grippers_list = data.get('grippers', [])
-                client_timestamps = data.get('timestamps', [])
-                client_send_timestamp = data.get('send_timestamp')
-
-                self.last_recv_timestamp = recv_timestamp
-
-                # =============================================================
-                # 图像解码与视角排序
-                # OpenPI Pi0.5 模型期望的图像顺序: [front, wrist]
-                # =============================================================
-
-                desired_keys = ["front_view", "wrist_view"]
-
-                view_aliases = {
-                    "front": "front_view",
-                    "front_cam": "front_view",
-                    "front_camera": "front_view",
-                    "wrist": "wrist_view",
-                    "wrist_cam": "wrist_view",
-                    "wrist_camera": "wrist_view",
-                    "ego_view": "wrist_view",
-                }
-
-                images = []
-
-                if isinstance(images_b64, dict):
-                    selected_images_b64 = {}
-                    if self.verbose and not self._view_mapping_logged:
-                        print(f"[OpenPI Pi0.5 推理服务器] 视角映射: {list(images_b64.keys())} → 模型顺序: {desired_keys}")
-                        self._view_mapping_logged = True
-
-                    for key in desired_keys:
-                        img_b64 = None
-                        if key in images_b64:
-                            img_b64 = images_b64[key]
-                        else:
-                            for alias, canonical in view_aliases.items():
-                                if canonical == key and alias in images_b64:
-                                    img_b64 = images_b64[alias]
-                                    break
-
-                        if isinstance(img_b64, list) and len(img_b64) > 0:
-                            img_b64 = img_b64[-1]
-
-                        if img_b64 is None:
-                            print(f"[警告] 缺少视角 {key}，无法完成推理")
-                            return
-
-                        selected_images_b64[key] = img_b64
-                        img_data = base64.b64decode(img_b64)
-                        img_array = np.frombuffer(img_data, dtype=np.uint8)
-                        image = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-                        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                        images.append(image)
-                    self._current_images_b64 = selected_images_b64
-                else:
-                    selected_images_b64 = {}
-                    if len(images_b64) > NUM_IMAGES:
-                        images_b64 = images_b64[-NUM_IMAGES:]
-                    for idx, img_b64 in enumerate(images_b64):
-                        if idx >= NUM_IMAGES:
-                            break
-                        selected_images_b64[f"camera_{idx}"] = img_b64
-                        img_data = base64.b64decode(img_b64)
-                        img_array = np.frombuffer(img_data, dtype=np.uint8)
-                        image = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-                        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                        images.append(image)
-                    self._current_images_b64 = selected_images_b64
-
-                # =============================================================
-                # 准备输入 State: 8D XYZW 四元数 → 7D 轴角
-                # =============================================================
-                poses = np.array(poses_list, dtype=np.float32)
-                grippers = np.array(grippers_list, dtype=np.float32)
-
-                last_pose7 = poses[-1]  # [x, y, z, qx, qy, qz, qw] (XYZW)
-                last_gripper1 = grippers[-1]
-
-                if isinstance(last_gripper1, np.ndarray):
-                    last_gripper1 = last_gripper1.flatten()
-                    if last_gripper1.size == 0:
-                        last_gripper1 = np.array([1.0], dtype=np.float32)
-                    elif last_gripper1.size > 1:
-                        last_gripper1 = last_gripper1[:1]
-                else:
-                    last_gripper1 = np.array([last_gripper1], dtype=np.float32)
-
-                pose8_xyzw = np.concatenate([last_pose7, last_gripper1]).astype(np.float32)
-
-                state7_aa = pose8_xyzw_to_state7_axisangle(
-                    pose8_xyzw,
-                    verbose=(self.verbose and self.episode_step_count == 0),
-                    prev_quat_xyzw=self.last_obs_quat,
-                    prev_axisangle=self.last_obs_axisangle,
+            if msg_type == "heartbeat":
+                heartbeat_session_id = int(data.get("session_id", self.protocol_session_id))
+                if heartbeat_session_id > 0:
+                    self.protocol_session_id = heartbeat_session_id
+                heartbeat_seq = int(data.get("heartbeat_seq", 0))
+                client_heartbeat_send_timestamp_ns = int(data.get("client_heartbeat_send_timestamp_ns", 0))
+                heartbeat_ack_msg, _ = binary_proto.encode_heartbeat_ack_message(
+                    session_id=self.protocol_session_id,
+                    heartbeat_seq=heartbeat_seq,
+                    client_heartbeat_send_timestamp_ns=client_heartbeat_send_timestamp_ns,
+                    server_heartbeat_recv_timestamp_ns=int(recv_timestamp_ns),
                 )
-                self.last_obs_quat = canonicalize_quaternion_xyzw(pose8_xyzw[3:7], prev_quat_xyzw=self.last_obs_quat)
-                self.last_obs_axisangle = state7_aa[3:6].copy()
+                self._send_payload(heartbeat_ack_msg)
+                return
 
-                if self.verbose and self.episode_step_count == 0:
-                    print(f"[Debug] 输入状态转换:")
-                    print(f"  8D XYZW:  {pose8_xyzw}")
-                    print(f"  7D 轴角:  {state7_aa}")
-                    angle_deg = np.degrees(np.linalg.norm(state7_aa[3:6]))
-                    print(f"  旋转角度: {angle_deg:.1f}°")
-
-                # =============================================================
-                # 构建 OpenPI 观测字典并推理
-                # =============================================================
-                obs = {
-                    "observation/front_image": images[0],   # RGB (H, W, 3)
-                    "observation/wrist_image": images[1],    # RGB (H, W, 3)
-                    "observation/state": state7_aa,          # [x, y, z, ax, ay, az, gripper]
-                    "prompt": self.task_prompt,
-                }
-
-                infer_start_time = time.time()
-                result = self.policy.infer(obs)
-                infer_end_time = time.time()
-
-                # OpenPI 返回的 actions 已经是绝对目标位置
-                # (经过 AbsoluteActions transform: delta + state → absolute)
-                action_chunk_7d = result["actions"]  # (action_horizon, 7)
-
-                # 截断到 TARGET_CHUNK_SIZE
-                if len(action_chunk_7d) > TARGET_CHUNK_SIZE:
-                    action_chunk_7d = action_chunk_7d[:TARGET_CHUNK_SIZE]
-
-                # [Debug] 打印初始动作偏差 (仅第一步)
-                if self.episode_step_count == 0 and len(action_chunk_7d) > 0:
-                    cur_pos = state7_aa[:3]
-                    cur_rot = state7_aa[3:6]
-                    act_pos = action_chunk_7d[0, :3]
-                    act_rot = action_chunk_7d[0, 3:6]
-                    pos_dist = np.linalg.norm(cur_pos - act_pos)
-                    rot_diff = np.linalg.norm(cur_rot - act_rot)
-                    print(f"[Debug] First Step Delta:")
-                    print(f"  Pos Dist: {pos_dist*100:.2f} cm")
-                    print(f"  Rot Diff: {np.degrees(rot_diff):.2f} deg (轴角向量范数差)")
-                    print(f"  Cur Rot: {cur_rot}")
-                    print(f"  Act Rot: {act_rot}")
-
-                # =============================================================
-                # 动作放大（补偿控制器跟踪衰减）
-                # 增量模型：OpenPI 的输出已经是绝对量（delta + state），
-                # 放大逻辑：从绝对量中提取 delta，放大后再加回 state
-                # =============================================================
-                if ACTION_AMPLIFY_POS != 1.0 or ACTION_AMPLIFY_ROT != 1.0:
-                    for i in range(len(action_chunk_7d)):
-                        # 位置放大 (x, y, z)
-                        if ACTION_AMPLIFY_POS != 1.0:
-                            delta_pos = action_chunk_7d[i, :3] - state7_aa[:3]
-                            action_chunk_7d[i, :3] = state7_aa[:3] + delta_pos * ACTION_AMPLIFY_POS
-                        # 旋转放大 (ax, ay, az - 轴角)
-                        if ACTION_AMPLIFY_ROT != 1.0:
-                            delta_rot = action_chunk_7d[i, 3:6] - state7_aa[3:6]
-                            action_chunk_7d[i, 3:6] = state7_aa[3:6] + delta_rot * ACTION_AMPLIFY_ROT
-                        # gripper 不放大
-
-                # =============================================================
-                # 动作安全限制 + 平滑
-                # =============================================================
-                action_chunk_7d = self._limit_and_smooth_action(action_chunk_7d, state7_aa)
-
-                # =============================================================
-                # 保存模型原始输出（用于日志记录）
-                # =============================================================
-                action_chunk_7d_raw = action_chunk_7d.copy()
-
-                # =============================================================
-                # 夹爪 chunk 一致性保持
-                # chunk 内多数投票：只有当新夹爪状态的连续预测数 >= chunk_size//2 时才切换，
-                # 否则保持第一个 action 的夹爪值
-                # =============================================================
-                if GRIPPER_CHUNK_CONSISTENCY and len(action_chunk_7d) > 0:
-                    grippers = action_chunk_7d[:, 6]
-                    binary = (grippers < GRIPPER_THRESHOLD).astype(int)  # 1=闭合, 0=打开
-                    first_state = binary[0]
-                    # 从第一个 action 开始，找到第一个不同状态的位置，统计后续连续新状态的长度
-                    new_state_count = 0
-                    for idx in range(len(binary)):
-                        if binary[idx] != first_state:
-                            new_state_count += 1
-                        else:
-                            if new_state_count > 0:
-                                break  # 新状态中断，停止计数
-                    min_switch = len(action_chunk_7d) // 2  # 向下取整
-                    if new_state_count >= min_switch:
-                        pass  # 新状态足够多，保持模型原始输出
-                    elif new_state_count > 0:
-                        # 新状态不够多，统一为第一个 action 的夹爪值
-                        action_chunk_7d[:, 6] = action_chunk_7d[0, 6]
-                        if self.verbose:
-                            print(f"[GripperConsistency] 新状态连续数 {new_state_count} < {min_switch}，统一为首值: {action_chunk_7d[0, 6]:.4f}")
-
-                # =============================================================
-                # 转换回 8D 四元数格式发送给客户端 (XYZW 标准顺序)
-                # =============================================================
-                action_chunk_8d = []
-                prev_quat = None
-
-                for i in range(len(action_chunk_7d)):
-                    pose8 = action7_axisangle_to_pose8_xyzw(action_chunk_7d[i])
-                    curr_quat = pose8[3:7]
-
-                    # 四元数符号一致性：确保相邻四元数走最短路径
-                    if prev_quat is not None:
-                        if np.dot(prev_quat, curr_quat) < 0:
-                            pose8[3:7] = -curr_quat
-                            curr_quat = -curr_quat
-
-                    action_chunk_8d.append(pose8)
-                    prev_quat = curr_quat
-
-                action_chunk_8d = np.array(action_chunk_8d)
-
-                # 确保第一帧四元数与当前 state 在同一半球
-                if len(action_chunk_8d) > 0:
-                    current_quat = axisangle_to_quaternion_xyzw(state7_aa[3:6])
-                    first_action_quat = action_chunk_8d[0, 3:7]
-                    if np.dot(current_quat, first_action_quat) < 0:
-                        action_chunk_8d[:, 3:7] = -action_chunk_8d[:, 3:7]
-
-                # 与上一次发送的末帧保持同半球
-                if len(action_chunk_8d) > 0 and self.last_sent_quat is not None:
-                    first_q = action_chunk_8d[0, 3:7]
-                    if np.dot(self.last_sent_quat, first_q) < 0:
-                        action_chunk_8d[:, 3:7] = -action_chunk_8d[:, 3:7]
-
-                if len(action_chunk_8d) > 0:
-                    self.last_sent_quat = action_chunk_8d[-1, 3:7].copy()
-
-                # =============================================================
-                # 发送响应
-                # =============================================================
-                response = {'type': 'action_sequence', 'actions': action_chunk_8d.tolist()}
-                msg = json.dumps(response) + '\n'
-                client_socket.sendall(msg.encode(ENCODING))
-
-                send_timestamp = time.time()
-
-                # 计算推理时间差（从接收到观测到下发指令）
-                inference_duration_ms = (send_timestamp - recv_timestamp) * 1000
-
-                # 保存时间记录到 JSON 文件
-                self._save_time_recording(
-                    recv_timestamp=recv_timestamp,
-                    send_timestamp=send_timestamp,
-                    inference_duration_ms=inference_duration_ms,
-                    task_prompt=self.task_prompt,
-                    step_count=self.episode_step_count
-                )
-
+            if msg_type != "observation":
                 if self.verbose:
-                    inference_time = (infer_end_time - infer_start_time) * 1000
-                    total_time = (send_timestamp - process_start_time) * 1000
-                    print(f"[OpenPI Pi0.5 推理服务器] 推理: {inference_time:.1f}ms | 总计: {total_time:.1f}ms | 动作: {action_chunk_7d.shape}")
+                    print(f"[OpenPI Pi0.5 推理服务器] 忽略未知消息类型: {msg_type}")
+                return
 
-                # 记录日志
-                self.episode_step_count += 1
-                transport_latency_ms = (recv_timestamp - client_send_timestamp) * 1000 if client_send_timestamp else None
-                total_latency_ms = (send_timestamp - client_send_timestamp) * 1000 if client_send_timestamp else None
-                current_step = {
-                    'step': len(self.inference_log['steps']),
-                    'timing': {
-                        'client_send': float(client_send_timestamp) if client_send_timestamp else None,
-                        'server_recv': float(recv_timestamp),
-                        'infer_start': float(infer_start_time),
-                        'infer_end': float(infer_end_time),
-                        'send_timestamp': float(send_timestamp),
-                        'inference_latency_ms': float((infer_end_time - infer_start_time) * 1000),
-                        'transport_latency_ms': float(transport_latency_ms) if transport_latency_ms is not None else None,
-                        'total_latency_ms': float(total_latency_ms) if total_latency_ms is not None else None,
-                    },
-                    'input': {
-                        'state7_axisangle': state7_aa.tolist(),
-                        'prompt': self.task_prompt,
-                        'obs_timestamps': client_timestamps,
-                        'client_send_timestamp': client_send_timestamp,
-                    },
-                    'action': {
-                        'action7_axisangle': action_chunk_7d_raw.tolist(),
-                        'action8_xyzw': action_chunk_8d.tolist(),
-                    }
-                }
-                self.inference_log['steps'].append(current_step)
+            process_start_timestamp_ns = time.time_ns()
 
-                # VLA-Lab 日志
-                if self.vlalab_run is not None:
-                    images_dict = None
-                    if isinstance(self._current_images_b64, dict) and len(self._current_images_b64) > 0:
-                        images_dict = self._current_images_b64
+            images_payload = data.get("images", {})
+            poses_list = data.get("poses", [])
+            grippers_list = data.get("grippers", [])
+            client_timestamps = data.get("timestamps", [])
+            client_send_timestamp = data.get("send_timestamp")
+            client_obs_send_timestamp_ns = data.get("client_obs_send_timestamp_ns")
+            client_last_chunk_id = data.get("client_last_chunk_id")
+            client_last_chunk_recv_timestamp_ns = data.get("client_last_chunk_recv_timestamp_ns")
 
-                    step_idx = len(self.inference_log['steps']) - 1
-                    inference_latency_ms = (infer_end_time - infer_start_time) * 1000
+            if client_obs_send_timestamp_ns is None and client_send_timestamp is not None:
+                client_obs_send_timestamp_ns = int(float(client_send_timestamp) * 1e9)
+            elif client_obs_send_timestamp_ns is not None:
+                client_obs_send_timestamp_ns = int(client_obs_send_timestamp_ns)
 
-                    vlalab.log({
+            acked_chunk_id = None if client_last_chunk_id is None else int(client_last_chunk_id)
+            acked_chunk_client_recv_timestamp_ns = (
+                None if client_last_chunk_recv_timestamp_ns is None else int(client_last_chunk_recv_timestamp_ns)
+            )
+
+            self.last_recv_timestamp = recv_timestamp_ns
+            recv_start_timestamp_ns = None if recv_metadata is None else recv_metadata.get("recv_start_timestamp_ns")
+            header_recv_timestamp_ns = None if recv_metadata is None else recv_metadata.get("header_recv_timestamp_ns")
+            body_recv_timestamp_ns = None if recv_metadata is None else recv_metadata.get("body_recv_timestamp_ns")
+            recv_body_length_bytes = None if recv_metadata is None else recv_metadata.get("body_length_bytes")
+            recv_body_chunk_count = None if recv_metadata is None else recv_metadata.get("body_recv_chunk_count")
+            recv_body_chunk_sizes_bytes = None if recv_metadata is None else recv_metadata.get("body_recv_chunk_sizes_bytes")
+            recv_body_chunk_intervals_ns = (
+                None if recv_metadata is None else recv_metadata.get("body_recv_chunk_intervals_ns")
+            )
+            recv_payload_bytes = None if recv_metadata is None else recv_metadata.get("payload_bytes")
+            recv_frame_count = None if recv_metadata is None else recv_metadata.get("framed_message_count")
+            recv_transport = None if recv_metadata is None else recv_metadata.get("transport")
+
+            recv_body_chunk_intervals_ms = None
+            recv_body_interval_avg_ms = None
+            recv_body_interval_max_ms = None
+            recv_body_avg_chunk_bytes = None
+            if isinstance(recv_body_chunk_intervals_ns, list):
+                recv_body_chunk_intervals_ms = [float(interval_ns) / 1e6 for interval_ns in recv_body_chunk_intervals_ns]
+                if recv_body_chunk_intervals_ms:
+                    recv_body_interval_avg_ms = float(np.mean(recv_body_chunk_intervals_ms))
+                    recv_body_interval_max_ms = float(np.max(recv_body_chunk_intervals_ms))
+            if isinstance(recv_body_chunk_sizes_bytes, list) and recv_body_chunk_sizes_bytes:
+                recv_body_avg_chunk_bytes = float(np.mean(recv_body_chunk_sizes_bytes))
+
+            desired_keys = ["front_view", "wrist_view"][: self.num_images]
+            (
+                images_for_model,
+                received_image_keys,
+                decoded_image_keys,
+                matched_image_source_keys,
+                missing_image_keys,
+            ) = self._resolve_images_for_model(images_payload, desired_keys)
+
+            if self.verbose and not self._view_mapping_logged:
+                print(
+                    "[OpenPI Pi0.5 推理服务器] 图像键映射: "
+                    f"received={received_image_keys} matched={matched_image_source_keys}"
+                )
+                self._view_mapping_logged = True
+
+            if missing_image_keys:
+                raise ValueError(
+                    f"missing observation images for model: missing={missing_image_keys}, "
+                    f"received={received_image_keys}"
+                )
+
+            if not poses_list or not grippers_list:
+                raise ValueError("observation missing poses or grippers")
+
+            poses = np.asarray(poses_list, dtype=np.float32).reshape(-1, 7)
+            grippers = np.asarray(grippers_list, dtype=np.float32).reshape(-1, 1)
+            last_pose7 = poses[-1]
+            last_gripper_value = float(grippers[-1].reshape(-1)[0]) if grippers.size > 0 else 1.0
+            state8 = np.concatenate(
+                [last_pose7, np.array([last_gripper_value], dtype=np.float32)],
+                axis=0,
+            ).astype(np.float32)
+
+            state7_aa = pose8_xyzw_to_state7_axisangle(
+                state8,
+                verbose=(self.verbose and self.episode_step_count == 0),
+                prev_quat_xyzw=self.last_obs_quat,
+                prev_axisangle=self.last_obs_axisangle,
+            )
+            self.last_obs_quat = canonicalize_quaternion_xyzw(state8[3:7], prev_quat_xyzw=self.last_obs_quat)
+            self.last_obs_axisangle = state7_aa[3:6].copy()
+
+            obs = {
+                "observation/front_image": images_for_model["front_view"],
+                "observation/state": state7_aa,
+                "prompt": self.task_prompt,
+            }
+            if "wrist_view" in images_for_model:
+                obs["observation/wrist_image"] = images_for_model["wrist_view"]
+
+            infer_start_timestamp_ns = time.time_ns()
+            result = self.policy.infer(obs)
+            infer_end_timestamp_ns = time.time_ns()
+
+            new_chunk_7d = np.asarray(result["actions"], dtype=np.float32).copy()
+            if new_chunk_7d.ndim == 1:
+                new_chunk_7d = new_chunk_7d.reshape(1, -1)
+            if len(new_chunk_7d) > self.target_chunk_size:
+                new_chunk_7d = new_chunk_7d[: self.target_chunk_size]
+
+            if self.action_amplify_pos != 1.0 or self.action_amplify_rot != 1.0:
+                for i in range(len(new_chunk_7d)):
+                    if self.action_amplify_pos != 1.0:
+                        delta_pos = new_chunk_7d[i, :3] - state7_aa[:3]
+                        new_chunk_7d[i, :3] = state7_aa[:3] + delta_pos * self.action_amplify_pos
+                    if self.action_amplify_rot != 1.0:
+                        delta_rot = new_chunk_7d[i, 3:6] - state7_aa[3:6]
+                        new_chunk_7d[i, 3:6] = state7_aa[3:6] + delta_rot * self.action_amplify_rot
+
+            execute_chunk_7d = self._limit_and_smooth_action(new_chunk_7d, state7_aa)
+
+            if self.gripper_chunk_consistency and len(execute_chunk_7d) > 0:
+                grippers_arr = execute_chunk_7d[:, 6]
+                binary_state = (grippers_arr < self.gripper_threshold).astype(np.int32)
+                first_state = int(binary_state[0])
+                new_state_count = 0
+                for idx in range(len(binary_state)):
+                    if int(binary_state[idx]) != first_state:
+                        new_state_count += 1
+                    elif new_state_count > 0:
+                        break
+                min_switch = len(execute_chunk_7d) // 2
+                if 0 < new_state_count < min_switch:
+                    execute_chunk_7d[:, 6] = execute_chunk_7d[0, 6]
+                    if self.verbose:
+                        print(
+                            "[GripperConsistency] "
+                            f"new_state_count={new_state_count} < {min_switch}, 使用首动作夹爪值"
+                        )
+
+            execute_chunk_7d_raw = execute_chunk_7d.copy()
+
+            action_chunk_8d = []
+            prev_quat = None
+            for i in range(len(execute_chunk_7d)):
+                pose8 = action7_axisangle_to_pose8_xyzw(execute_chunk_7d[i])
+                curr_quat = pose8[3:7]
+                if prev_quat is not None and float(np.dot(prev_quat, curr_quat)) < 0.0:
+                    pose8[3:7] = -curr_quat
+                    curr_quat = -curr_quat
+                action_chunk_8d.append(pose8)
+                prev_quat = curr_quat
+
+            action_chunk_8d = np.asarray(action_chunk_8d, dtype=np.float32)
+
+            if len(action_chunk_8d) > 0:
+                current_quat = axisangle_to_quaternion_xyzw(state7_aa[3:6])
+                if float(np.dot(current_quat, action_chunk_8d[0, 3:7])) < 0.0:
+                    action_chunk_8d[:, 3:7] = -action_chunk_8d[:, 3:7]
+
+            if len(action_chunk_8d) > 0 and self.last_sent_quat is not None:
+                if float(np.dot(self.last_sent_quat, action_chunk_8d[0, 3:7])) < 0.0:
+                    action_chunk_8d[:, 3:7] = -action_chunk_8d[:, 3:7]
+
+            if len(action_chunk_8d) > 0:
+                self.last_sent_quat = action_chunk_8d[-1, 3:7].copy()
+
+            chunk_id = int(self.next_chunk_id)
+            self.next_chunk_id += 1
+            msg, _ = binary_proto.encode_action_message(
+                chunk_id=chunk_id,
+                action=action_chunk_8d,
+                session_id=self.protocol_session_id,
+                obs_seq=int(data.get("obs_seq", 0)),
+                infer_latency_us=int((infer_end_timestamp_ns - infer_start_timestamp_ns) / 1000),
+            )
+            (
+                server_chunk_send_timestamp_ns,
+                send_complete_timestamp_ns,
+                chunk_send_block_latency_ms,
+            ) = self._send_payload(msg)
+
+            if self.verbose:
+                inference_time_ms = float((infer_end_timestamp_ns - infer_start_timestamp_ns) / 1e6)
+                total_time_ms = float((send_complete_timestamp_ns - process_start_timestamp_ns) / 1e6)
+                print(
+                    "[OpenPI Pi0.5 推理服务器] "
+                    f"step={self.episode_step_count} infer={inference_time_ms:.1f}ms "
+                    f"total={total_time_ms:.1f}ms action_shape={tuple(action_chunk_8d.shape)}"
+                )
+
+            step_idx = len(self.inference_log["steps"])
+            self.episode_step_count += 1
+
+            obs_upload_network_latency_ms = None
+            obs_upload_recv_start_latency_ms = None
+            obs_upload_header_recv_latency_ms = None
+            obs_upload_body_only_latency_ms = None
+            obs_upload_recv_start_to_header_recv_latency_ms = None
+            obs_upload_header_to_body_recv_latency_ms = None
+            total_latency_ms = None
+            if client_obs_send_timestamp_ns is not None:
+                if recv_start_timestamp_ns is not None:
+                    obs_upload_recv_start_latency_ms = (
+                        recv_start_timestamp_ns - client_obs_send_timestamp_ns - self.clock_offset_ns
+                    ) / 1e6
+                if header_recv_timestamp_ns is not None:
+                    obs_upload_header_recv_latency_ms = (
+                        header_recv_timestamp_ns - client_obs_send_timestamp_ns - self.clock_offset_ns
+                    ) / 1e6
+                obs_upload_network_latency_ms = (
+                    recv_timestamp_ns - client_obs_send_timestamp_ns - self.clock_offset_ns
+                ) / 1e6
+                if body_recv_timestamp_ns is not None and header_recv_timestamp_ns is not None:
+                    obs_upload_header_to_body_recv_latency_ms = (
+                        body_recv_timestamp_ns - header_recv_timestamp_ns
+                    ) / 1e6
+                if body_recv_timestamp_ns is not None and recv_start_timestamp_ns is not None:
+                    obs_upload_body_only_latency_ms = (body_recv_timestamp_ns - recv_start_timestamp_ns) / 1e6
+                if header_recv_timestamp_ns is not None and recv_start_timestamp_ns is not None:
+                    obs_upload_recv_start_to_header_recv_latency_ms = (
+                        header_recv_timestamp_ns - recv_start_timestamp_ns
+                    ) / 1e6
+                total_latency_ms = (
+                    send_complete_timestamp_ns - client_obs_send_timestamp_ns - self.clock_offset_ns
+                ) / 1e6
+
+            acked_chunk_download_latency_ms = None
+            acked_chunk_download_from_send_start_latency_ms = None
+            if acked_chunk_id is not None and acked_chunk_client_recv_timestamp_ns is not None:
+                acked_server_send_timestamp_ns = self.chunk_send_timestamps_ns.get(acked_chunk_id)
+                acked_server_send_complete_timestamp_ns = self.chunk_send_complete_timestamps_ns.get(acked_chunk_id)
+                acked_chunk_step_idx = self.chunk_step_indices.get(acked_chunk_id)
+                if acked_server_send_timestamp_ns is not None:
+                    acked_reference_send_timestamp_ns = (
+                        int(acked_server_send_complete_timestamp_ns)
+                        if acked_server_send_complete_timestamp_ns is not None
+                        else int(acked_server_send_timestamp_ns)
+                    )
+                    acked_chunk_download_latency_ms = (
+                        acked_chunk_client_recv_timestamp_ns
+                        + self.clock_offset_ns
+                        - acked_reference_send_timestamp_ns
+                    ) / 1e6
+                    acked_chunk_download_from_send_start_latency_ms = (
+                        acked_chunk_client_recv_timestamp_ns
+                        + self.clock_offset_ns
+                        - int(acked_server_send_timestamp_ns)
+                    ) / 1e6
+                    if acked_chunk_step_idx is not None and 0 <= acked_chunk_step_idx < len(self.inference_log["steps"]):
+                        acked_step = self.inference_log["steps"][acked_chunk_step_idx]
+                        acked_timing = acked_step.setdefault("timing", {})
+                        acked_timing["client_chunk_recv_timestamp_ns"] = int(acked_chunk_client_recv_timestamp_ns)
+                        acked_timing["server_chunk_send_complete_timestamp_ns"] = (
+                            None
+                            if acked_server_send_complete_timestamp_ns is None
+                            else int(acked_server_send_complete_timestamp_ns)
+                        )
+                        acked_timing["chunk_download_latency_ms"] = float(acked_chunk_download_latency_ms)
+                        acked_timing["chunk_download_latency_from_send_start_ms"] = float(
+                            acked_chunk_download_from_send_start_latency_ms
+                        )
+                        acked_timing["chunk_download_acked_in_step"] = int(step_idx)
+
+            timing_dict = {
+                "transport": recv_transport,
+                "clock_offset_ns": int(self.clock_offset_ns),
+                "client_obs_send_timestamp_ns": (
+                    int(client_obs_send_timestamp_ns) if client_obs_send_timestamp_ns is not None else None
+                ),
+                "server_obs_recv_start_timestamp_ns": (
+                    int(recv_start_timestamp_ns) if recv_start_timestamp_ns is not None else None
+                ),
+                "server_obs_header_recv_timestamp_ns": (
+                    int(header_recv_timestamp_ns) if header_recv_timestamp_ns is not None else None
+                ),
+                "server_obs_recv_timestamp_ns": int(recv_timestamp_ns),
+                "server_obs_payload_bytes": int(recv_payload_bytes) if recv_payload_bytes is not None else None,
+                "server_obs_frame_count": int(recv_frame_count) if recv_frame_count is not None else None,
+                "server_obs_body_length_bytes": (
+                    int(recv_body_length_bytes) if recv_body_length_bytes is not None else None
+                ),
+                "server_obs_body_recv_chunk_count": (
+                    int(recv_body_chunk_count) if recv_body_chunk_count is not None else None
+                ),
+                "server_obs_body_recv_chunk_sizes_bytes": recv_body_chunk_sizes_bytes,
+                "server_obs_body_recv_avg_chunk_bytes": recv_body_avg_chunk_bytes,
+                "server_obs_body_recv_chunk_intervals_ms": recv_body_chunk_intervals_ms,
+                "server_obs_body_recv_chunk_interval_avg_ms": recv_body_interval_avg_ms,
+                "server_obs_body_recv_chunk_interval_max_ms": recv_body_interval_max_ms,
+                "infer_start_timestamp_ns": int(infer_start_timestamp_ns),
+                "infer_end_timestamp_ns": int(infer_end_timestamp_ns),
+                "server_chunk_send_timestamp_ns": int(server_chunk_send_timestamp_ns),
+                "server_chunk_send_complete_timestamp_ns": int(send_complete_timestamp_ns),
+                "chunk_send_block_latency_ms": float(chunk_send_block_latency_ms),
+                "inference_latency_ms": float((infer_end_timestamp_ns - infer_start_timestamp_ns) / 1e6),
+                "obs_upload_recv_start_latency_ms": obs_upload_recv_start_latency_ms,
+                "obs_upload_header_recv_latency_ms": obs_upload_header_recv_latency_ms,
+                "obs_upload_body_only_latency_ms": obs_upload_body_only_latency_ms,
+                "obs_upload_recv_start_to_header_recv_latency_ms": obs_upload_recv_start_to_header_recv_latency_ms,
+                "obs_upload_header_to_body_recv_latency_ms": obs_upload_header_to_body_recv_latency_ms,
+                "obs_upload_network_latency_ms": obs_upload_network_latency_ms,
+                "total_latency_ms": total_latency_ms,
+                "acked_chunk_id": int(acked_chunk_id) if acked_chunk_id is not None else None,
+                "acked_chunk_client_recv_timestamp_ns": (
+                    int(acked_chunk_client_recv_timestamp_ns)
+                    if acked_chunk_client_recv_timestamp_ns is not None
+                    else None
+                ),
+                "acked_chunk_download_latency_ms": acked_chunk_download_latency_ms,
+                "acked_chunk_download_latency_from_send_start_ms": acked_chunk_download_from_send_start_latency_ms,
+            }
+
+            current_step = {
+                "step": step_idx,
+                "timing": timing_dict,
+                "input": {
+                    "state8_xyzw": state8.tolist(),
+                    "state7_axisangle": state7_aa.tolist(),
+                    "prompt": self.task_prompt,
+                    "obs_timestamps": client_timestamps,
+                    "received_image_keys": received_image_keys,
+                    "decoded_image_keys": decoded_image_keys,
+                    "matched_image_source_keys": matched_image_source_keys,
+                },
+                "action": {
+                    "chunk_id": int(chunk_id),
+                    "action7_axisangle_model": new_chunk_7d.tolist(),
+                    "action7_axisangle_sent": execute_chunk_7d_raw.tolist(),
+                    "action8_xyzw_sent": action_chunk_8d.tolist(),
+                },
+            }
+            if missing_image_keys:
+                current_step["input"]["missing_model_image_keys"] = missing_image_keys
+
+            self.inference_log["steps"].append(current_step)
+            self.chunk_send_timestamps_ns[chunk_id] = int(server_chunk_send_timestamp_ns)
+            self.chunk_send_complete_timestamps_ns[chunk_id] = int(send_complete_timestamp_ns)
+            self.chunk_step_indices[chunk_id] = int(step_idx)
+
+            if self.vlalab_run is not None:
+                images_dict = None
+                if isinstance(images_payload, dict) and images_payload:
+                    images_dict = {}
+                    for model_key, source_key in matched_image_source_keys.items():
+                        if source_key in images_payload:
+                            images_dict[model_key] = self._image_payload_to_log_value(images_payload[source_key])
+                    if not images_dict:
+                        images_dict = {k: self._image_payload_to_log_value(v) for k, v in images_payload.items()}
+
+                vlalab.log(
+                    {
                         "state": state7_aa.tolist(),
-                        "action": action_chunk_7d.tolist(),
+                        "action": execute_chunk_7d_raw.tolist(),
                         "images": images_dict if images_dict else None,
-                        "inference_latency_ms": inference_latency_ms,
-                        "transport_latency_ms": transport_latency_ms,
-                        "total_latency_ms": total_latency_ms,
-                    }, step=step_idx)
+                        "inference_latency_ms": timing_dict.get("inference_latency_ms"),
+                        "obs_upload_network_latency_ms": timing_dict.get("obs_upload_network_latency_ms"),
+                    },
+                    step=step_idx,
+                )
 
-        except Exception as e:
-            print(f"[OpenPI Pi0.5 推理服务器] 处理错误: {e}")
+        except Exception as exc:
+            print(f"[OpenPI Pi0.5 推理服务器] 处理错误: {exc}")
             import traceback
+
             traceback.print_exc()
 
     def _save_inference_log(self):
-        """保存推理日志"""
         try:
-            log_dir = Path(__file__).parent / "log"
+            log_dir = CURRENT_DIR / "log"
             log_dir.mkdir(exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             log_file = log_dir / f"inference_log_openpi_pi05_{timestamp}.json"
-            with open(log_file, 'w') as f:
-                json.dump(self.inference_log, f, indent=2)
+            with open(log_file, "w", encoding="utf-8") as f:
+                json.dump(self.inference_log, f, indent=2, ensure_ascii=False)
             print(f"[OpenPI Pi0.5 推理服务器] 日志已保存: {log_file}")
-
             if self.vlalab_run is not None:
                 vlalab.finish()
-        except Exception as e:
-            print(f"[错误] 保存日志失败: {e}")
-
-    def _save_time_recording(
-        self,
-        recv_timestamp: float,
-        send_timestamp: float,
-        inference_duration_ms: float,
-        task_prompt: str,
-        step_count: int
-    ):
-        """
-        记录单次推理的时间信息（追加到列表，服务器关闭时统一保存）
-
-        Args:
-            recv_timestamp: 接收观测信息的时间戳
-            send_timestamp: 发送指令的时间戳
-            inference_duration_ms: 推理消耗时间（毫秒）
-            task_prompt: 任务指令
-            step_count: 当前 episode 的步数
-        """
-        try:
-            self.inference_count += 1
-
-            # 构建记录数据
-            record = {
-                "inference_id": self.inference_count,
-                "timestamp": {
-                    "receive_observation": float(recv_timestamp),
-                    "send_command": float(send_timestamp),
-                    "receive_observation_iso": datetime.fromtimestamp(recv_timestamp).isoformat(),
-                    "send_command_iso": datetime.fromtimestamp(send_timestamp).isoformat(),
-                },
-                "inference_duration_ms": float(inference_duration_ms),
-                "task_prompt": task_prompt,
-                "episode_step": step_count,
-            }
-
-            # 追加到记录列表
-            self.time_records.append(record)
-
-        except Exception as e:
-            print(f"[错误] 记录时间失败: {e}")
-
-    def _save_all_time_records(self):
-        """保存所有时间记录到 JSON 文件"""
-        try:
-            if not self.time_records:
-                print("[时间记录] 无记录可保存")
-                return
-
-            filepath = self.time_recordings_dir / self.time_record_filename
-
-            # 提取所有 inference_duration_ms
-            durations = [r["inference_duration_ms"] for r in self.time_records]
-
-            # 构建完整的 JSON 数据
-            full_record = {
-                "inference_records": self.time_records,
-                "summary": {
-                    "inference_duration_ms": durations
-                }
-            }
-
-            # 保存到 JSON 文件
-            with open(filepath, 'w', encoding='utf-8') as f:
-                json.dump(full_record, f, indent=2, ensure_ascii=False)
-
-            print(f"[时间记录] 已保存: {filepath.name}, 共 {len(self.time_records)} 条记录")
-
-        except Exception as e:
-            print(f"[错误] 保存时间记录失败: {e}")
+        except Exception as exc:
+            print(f"[OpenPI Pi0.5 推理服务器] 保存日志失败: {exc}")
 
 
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description='OpenPI Pi0.5 推理服务器 (增量轴角模式)')
-    parser.add_argument('--checkpoint_dir', type=str, default=CHECKPOINT_DIR,
-                        help='OpenPI checkpoint 目录路径')
-    parser.add_argument('--config_name', type=str, default=CONFIG_NAME,
-                        help='OpenPI 训练配置名称 (如 pi05_stack_bowls_lora)')
-    parser.add_argument('--device', type=str, default=DEVICE,
-                        help='推理设备')
-    parser.add_argument('--port', type=int, default=SERVER_PORT,
-                        help='服务器端口')
-    parser.add_argument('--prompt', type=str, default=TASK_PROMPT,
-                        help='任务指令 prompt')
+    parser = argparse.ArgumentParser(description="OpenPI Pi0.5 inference server")
+    parser.add_argument("--checkpoint_dir", type=str, default=CHECKPOINT_DIR, help="OpenPI checkpoint 目录")
+    parser.add_argument("--config_name", type=str, default=CONFIG_NAME, help="OpenPI 训练配置名")
+    parser.add_argument("--device", type=str, default=DEVICE, help="PyTorch 推理设备")
+    parser.add_argument("--port", type=int, default=SERVER_PORT, help="观测上传端口")
+    parser.add_argument("--observation_port", type=int, default=None, help="观测上传 ZeroMQ 端口")
+    parser.add_argument("--action_port", type=int, default=None, help="动作下发 ZeroMQ 端口")
+    parser.add_argument("--prompt", type=str, default=TASK_PROMPT, help="任务指令")
+    parser.add_argument("--inference_freq", type=float, default=INFERENCE_FREQ, help="推理频率")
     args = parser.parse_args()
+
+    observation_port = args.port if args.observation_port is None else int(args.observation_port)
+    action_port = (observation_port + 1) if args.action_port is None else int(args.action_port)
 
     server = OpenPiPi05InferenceServer(
         config_name=args.config_name,
         checkpoint_dir=args.checkpoint_dir,
         device=args.device,
-        server_port=args.port,
         task_prompt=args.prompt,
+        inference_freq=args.inference_freq,
+        server_port=observation_port,
+        observation_port=observation_port,
+        action_port=action_port,
     )
     server.start()

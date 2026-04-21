@@ -1,7 +1,7 @@
 # Robot 环境依赖 (Python 3.8, 兼容 Polymetis)
 #
-# 此环境用于运行 inference_client.py，通过轻量级 PolicyClient
-# 与远程 GR00T 服务器通信，同时控制 Franka 机器人。
+# 此环境用于运行 inference_client.py，
+# 与远程推理服务器通信，同时控制 Franka 机器人。
 #
 # 安装方法:
 #   conda activate robot
@@ -9,7 +9,7 @@
 #
 # 注意: Polymetis 需要单独安装 (参考 polymetis/ 目录)
 
-# ZMQ 通信 (与 GR00T 服务器通信)
+# ZMQ 通信 (与远程推理服务器通信)
 pyzmq>=22.0.0
 
 # 消息序列化
@@ -25,7 +25,7 @@ numpy>=1.19.0,<2.0.0
 # 相机支持
 opencv-python>=4.5.0
 pyrealsense2>=2.50.0  # Intel RealSense 相机 (可选)
+PyTurboJPEG>=1.7.3
 
 # 可视化 (可选)
 matplotlib>=3.3.0
-
