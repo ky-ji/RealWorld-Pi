@@ -6,7 +6,9 @@
 # ==================== 本地服务器配置 ====================
 # 推理服务器配置（本地直接连接）
 SERVER_IP = "127.0.0.1"      # 本地服务器地址
-SERVER_PORT = 8007           # 本地服务器端口
+SERVER_PORT = 8007           # 观测上传端口
+OBSERVATION_PORT = 8007
+ACTION_PORT = 8008
 
 # ==================== 机器人配置 ====================
 # Polymetis 服务器配置
@@ -27,52 +29,27 @@ CARTESIAN_KX = [400, 400, 400, 10, 10, 10]   # 笛卡尔刚度（中速模式）
 CARTESIAN_KXD = [40, 40, 40, 3, 3, 3]         # 笛卡尔阻尼
 
 # ==================== 摄像头配置 ====================
-CAMERA_TYPE = 'realsense'    # 相机类型: 'realsense' 或 'usb'
-CAMERA_INDEX = 0             # 摄像头索引（仅 USB 相机使用）
-CAMERA_SERIAL_NUMBER = '944622073019'  # RealSense 相机序列号（用于多相机场景，对应 front_view）
-CAMERA_RESOLUTION = (1280, 720)  # 摄像头分辨率 (width, height)
-IMAGE_QUALITY = 80           # JPEG 压缩质量 (1-100)
-ENABLE_DEPTH = True          # 是否启用深度（仅 RealSense 相机）
+IMAGE_QUALITY = 85           # JPEG 压缩质量 (1-100)
+CAMERA_CONFIG_PATH = "control/cameras/camera_config.json"  # 相机配置文件路径
+COLLECT_OBS_FREQ = 60.0
 
 # ==================== 推理配置 ====================
-INFERENCE_FREQ = 10.0        # 推理频率 (Hz)
-N_OBS_STEPS = 2              # 观测步数（历史帧数）
-CAMERA_FREQ = 30.0           # 摄像头采样频率 (Hz)
-STEPS_PER_INFERENCE = 6      # 每次推理执行的动作数量（1 = 最实时，6 = 官方默认值）
-
-# ==================== 动作执行配置 ====================
-# 动作缩放因子 (0.0-1.0)
-# - 1.0: 完全执行模型输出的动作（最快，需要模型准确）
-# - 0.5: 执行50%的动作幅度（较安全）
-# - 0.2: 执行20%的动作幅度（最安全，适合测试）
-ACTION_SCALE = 1.0
-
-# ==================== 动作后处理配置（Diffusion Policy / VLA 推荐） ====================
-# Receding-horizon：每次预测一段动作序列，只执行前 K 步，其余丢弃等待下一次重规划
-EXECUTE_ACTION_PREFIX = 6
-
-# Temporal ensembling：对目标位姿做 EMA 平滑（0 表示关闭）
-TEMPORAL_ENSEMBLE_ALPHA = 0.5
+# OpenPI Pi0.5 保持 10Hz 的动作 chunk 节拍，
+# 但观测采集与控制回路保持更高频率以减少执行滞后。
+INFERENCE_FREQ = 10.0
+EXECUTION_FREQ = 60.0
+ARRIVAL_SETTLE_POS_DELTA_THRESHOLD = 0.0005
+ARRIVAL_SETTLE_STABLE_COUNT = 2
+ARRIVAL_CHECK_FREQ = 60.0
+ARRIVAL_LOG_INTERVAL_SEC = 0.5
+ARRIVAL_MAX_WAIT_SEC = 1.5
 
 # IK 可行性投影：目标位姿 IK 失败则沿路径回退搜索可行点
 ENABLE_IK_PROJECTION = True
-IK_LINE_SEARCH_STEPS = 6
+IK_LINE_SEARCH_STEPS = 10
 IK_TOL = 1e-3
-
-# 回退点过滤（对 diffusion 的细小动作序列容易误伤，建议保持关闭）
-ENABLE_BACKTRACK_FILTER = False
-
-# 夹爪参数（注意：代码中已硬编码正确参数，这些配置暂不使用）
-GRIPPER_OPEN_WIDTH = 0.09    # 夹爪打开宽度 (m) - 使用 goto()
-GRIPPER_CLOSED_WIDTH = 0.0   # 夹爪关闭宽度 (m) - 使用 grasp()
-GRIPPER_SPEED = 0.3          # 夹爪移动速度 (m/s)
-GRIPPER_FORCE = 1.0          # 夹爪力 (N)
 
 # ==================== 网络配置 ====================
 SOCKET_TIMEOUT = 5.0         # Socket 超时时间 (秒)
 BUFFER_SIZE = 4096           # 接收缓冲区大小 (字节)
 ENCODING = 'utf-8'           # 字符编码
-
-# ==================== 日志配置 ====================
-SAVE_TRAJECTORY_LOG = True   # 是否保存轨迹日志
-LOG_DIR = "log"              # 日志保存目录（相对于 robot_inference 目录）
